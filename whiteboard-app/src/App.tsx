@@ -1,5 +1,5 @@
 // src/App.tsx
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import keycloak from './keycloak';
 import { Whiteboard } from './components/Whiteboard';
 
@@ -7,8 +7,22 @@ function App() {
   const [authenticated, setAuthenticated] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(true);
   const [username, setUsername] = useState<string>('');
+  const [initialRoomId, setInitialRoomId] = useState<string>('main-room');
+  const isInitialized = useRef<boolean>(false);
+
+  // Get room ID from URL parameters
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const roomParam = urlParams.get('room');
+    if (roomParam) {
+      setInitialRoomId(roomParam);
+    }
+  }, []);
 
   useEffect(() => {
+    if (isInitialized.current) return;
+    isInitialized.current = true;
+
     keycloak
       .init({
         onLoad: 'login-required',
@@ -54,29 +68,8 @@ function App() {
   }
 
   return (
-    <div className="d-flex flex-column vh-100 overflow-hidden">
-      {/* Top Navbar */}
-      <nav className="navbar navbar-dark bg-dark px-3 justify-content-between flex-shrink-0" style={{ height: '60px' }}>
-        <span className="navbar-brand mb-0 h1 fs-5 d-flex align-items-center gap-2">
-          🎨 Real-Time Whiteboard
-        </span>
-        <div className="d-flex align-items-center gap-3">
-          <span className="text-light small">
-            User: <strong>{username}</strong>
-          </span>
-          <button
-            className="btn btn-outline-danger btn-sm"
-            onClick={() => keycloak.logout({ redirectUri: window.location.origin })}
-          >
-            Logout
-          </button>
-        </div>
-      </nav>
-
-      {/* Main Whiteboard Canvas */}
-      <main className="flex-grow-1 position-relative">
-        <Whiteboard username={username} />
-      </main>
+    <div className="w-100 vh-100 overflow-hidden">
+      <Whiteboard username={username} initialRoomId={initialRoomId} />
     </div>
   );
 }

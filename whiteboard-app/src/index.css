@@ -1,111 +1,447 @@
+/* src/index.css */
+@import 'bootstrap/dist/css/bootstrap.min.css';
+
+/* CSS Custom Properties for Theming */
 :root {
-  --text: #6b6375;
-  --text-h: #08060d;
-  --bg: #fff;
-  --border: #e5e4e7;
-  --code-bg: #f4f3ec;
-  --accent: #aa3bff;
-  --accent-bg: rgba(170, 59, 255, 0.1);
-  --accent-border: rgba(170, 59, 255, 0.5);
-  --social-bg: rgba(244, 243, 236, 0.5);
-  --shadow:
-    rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
-
-  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --mono: ui-monospace, Consolas, monospace;
-
-  font: 18px/145% var(--sans);
-  letter-spacing: 0.18px;
-  color-scheme: light dark;
-  color: var(--text);
-  background: var(--bg);
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-
-  @media (max-width: 1024px) {
-    font-size: 16px;
-  }
+  /* Light Mode Colors */
+  --bg-primary: #ffffff;
+  --bg-secondary: #f8fafc;
+  --bg-tertiary: #f1f5f9;
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-muted: #94a3b8;
+  --border-color: #e2e8f0;
+  --border-light: #f1f5f9;
+  
+  /* Accent Colors */
+  --accent-primary: #6366f1;
+  --accent-primary-hover: #4f46e5;
+  --accent-secondary: #8b5cf6;
+  --accent-success: #22c55e;
+  --accent-danger: #ef4444;
+  --accent-warning: #f59e0b;
+  
+  /* Glassmorphism - Light Mode */
+  --glass-bg: rgba(255, 255, 255, 0.88);
+  --glass-border: rgba(226, 232, 240, 0.8);
+  --glass-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.08), 0 8px 10px -6px rgba(15, 23, 42, 0.04);
+  
+  /* Canvas Grid */
+  --canvas-bg: #f8fafc;
+  --canvas-grid: #cbd5e1;
+  
+  /* Tool States */
+  --tool-bg: transparent;
+  --tool-bg-hover: #f1f5f9;
+  --tool-bg-active: #eff6ff;
+  --tool-text: #475569;
+  --tool-text-active: #6366f1;
+  --tool-border-active: #6366f1;
+  
+  /* Button Text - Light Mode */
+  --button-text: #0f172a;
+  
+  /* Transitions */
+  --transition-fast: 150ms ease-in-out;
+  --transition-normal: 300ms ease-in-out;
+  --transition-slow: 500ms ease-in-out;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --text: #9ca3af;
-    --text-h: #f3f4f6;
-    --bg: #16171d;
-    --border: #2e303a;
-    --code-bg: #1f2028;
-    --accent: #c084fc;
-    --accent-bg: rgba(192, 132, 252, 0.15);
-    --accent-border: rgba(192, 132, 252, 0.5);
-    --social-bg: rgba(47, 48, 58, 0.5);
-    --shadow:
-      rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
-  }
-
-  #social .button-icon {
-    filter: invert(1) brightness(2);
-  }
-}
-
-#root {
-  width: 1126px;
-  max-width: 100%;
-  margin: 0 auto;
-  text-align: center;
-  border-inline: 1px solid var(--border);
-  min-height: 100svh;
-  display: flex;
-  flex-direction: column;
-  box-sizing: border-box;
+[data-theme="dark"] {
+  /* Dark Mode Colors */
+  --bg-primary: #0f172a;
+  --bg-secondary: #1e293b;
+  --bg-tertiary: #334155;
+  --text-primary: #f1f5f9;
+  --text-secondary: #cbd5e1;
+  --text-muted: #64748b;
+  --border-color: #334155;
+  --border-light: #1e293b;
+  
+  /* Accent Colors - slightly adjusted for dark mode */
+  --accent-primary: #818cf8;
+  --accent-primary-hover: #6366f1;
+  
+  /* Glassmorphism - Dark Mode */
+  --glass-bg: rgba(30, 41, 59, 0.88);
+  --glass-border: rgba(51, 65, 85, 0.8);
+  --glass-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3), 0 8px 10px -6px rgba(0, 0, 0, 0.2);
+  
+  /* Canvas Grid */
+  --canvas-bg: #0f172a;
+  --canvas-grid: #334155;
+  
+  /* Tool States - Dark Mode */
+  --tool-bg: transparent;
+  --tool-bg-hover: #334155;
+  --tool-bg-active: #312e81;
+  --tool-text: #cbd5e1;
+  --tool-text-active: #818cf8;
+  --tool-border-active: #818cf8;
+  
+  /* Button Text - Dark Mode */
+  --button-text: #f1f5f9;
 }
 
 body {
   margin: 0;
+  padding: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  overflow: hidden;
+  background-color: var(--bg-secondary);
+  color: var(--text-primary);
+  transition: background-color var(--transition-normal), color var(--transition-normal);
 }
 
-h1,
-h2 {
-  font-family: var(--heading);
-  font-weight: 500;
-  color: var(--text-h);
+/* Glassmorphism Floating Containers */
+.glass-panel {
+  background: var(--glass-bg) !important;
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
+  border: 1px solid var(--glass-border) !important;
+  box-shadow: var(--glass-shadow) !important;
+  transition: background-color var(--transition-normal), border-color var(--transition-normal), box-shadow var(--transition-normal);
 }
 
-h1 {
-  font-size: 56px;
-  letter-spacing: -1.68px;
-  margin: 32px 0;
-  @media (max-width: 1024px) {
-    font-size: 36px;
-    margin: 20px 0;
-  }
-}
-h2 {
-  font-size: 24px;
-  line-height: 118%;
-  letter-spacing: -0.24px;
-  margin: 0 0 8px;
-  @media (max-width: 1024px) {
-    font-size: 20px;
-  }
-}
-p {
-  margin: 0;
+/* Canvas Dot Grid Background */
+.canvas-grid-bg {
+  background-color: var(--canvas-bg);
+  background-image: radial-gradient(var(--canvas-grid) 1.2px, transparent 1.2px);
+  background-size: 24px 24px;
+  transition: background-color var(--transition-normal);
 }
 
-code,
-.counter {
-  font-family: var(--mono);
-  display: inline-flex;
-  border-radius: 4px;
-  color: var(--text-h);
+/* Tool Buttons */
+.tool-btn {
+  width: 38px;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  border: none;
+  background: var(--tool-bg);
+  color: var(--tool-text);
+  transition: all var(--transition-fast);
 }
 
-code {
-  font-size: 15px;
-  line-height: 135%;
+.tool-btn:hover {
+  background: var(--tool-bg-hover);
+  color: var(--text-primary);
+}
+
+.tool-btn.active {
+  background: var(--tool-bg-active);
+  color: var(--tool-text-active);
+  font-weight: 600;
+  box-shadow: inset 0 0 0 1.5px var(--tool-border-active);
+}
+
+/* Color Swatches */
+.color-swatch {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  transition: transform var(--transition-fast);
+  cursor: pointer;
+}
+
+.color-swatch:hover {
+  transform: scale(1.15);
+}
+
+.color-swatch.active {
+  transform: scale(1.2);
+  box-shadow: 0 0 0 2px var(--bg-primary), 0 0 0 4px var(--accent-primary);
+}
+
+/* Theme Toggle Switch */
+.theme-toggle {
+  position: relative;
+  width: 44px;
+  height: 24px;
+  background-color: var(--bg-tertiary);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: background-color var(--transition-fast);
+  border: none;
+  padding: 0;
+}
+
+.theme-toggle::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 20px;
+  height: 20px;
+  background-color: var(--text-primary);
+  border-radius: 50%;
+  transition: transform var(--transition-fast);
+}
+
+[data-theme="dark"] .theme-toggle::after {
+  transform: translateX(20px);
+}
+
+.theme-toggle:hover {
+  background-color: var(--border-color);
+}
+
+/* Button text color for theme awareness */
+[data-theme="dark"] .glass-panel .text-slate-700,
+[data-theme="dark"] .glass-panel .small,
+[data-theme="dark"] .glass-panel .text-slate-800,
+[data-theme="dark"] .glass-panel .text-muted {
+  color: var(--button-text) !important;
+}
+
+/* Input text in dark mode */
+[data-theme="dark"] .glass-panel input,
+[data-theme="dark"] .glass-panel .text-slate-700 {
+  color: var(--text-primary) !important;
+}
+
+/* Export dropdown text in dark mode */
+[data-theme="dark"] .dropdown-menu .dropdown-item,
+[data-theme="dark"] .glass-panel .dropdown-item,
+[data-theme="dark"] .glass-panel button {
+  color: var(--text-primary) !important;
+}
+
+[data-theme="dark"] .dropdown-menu .dropdown-item:hover,
+[data-theme="dark"] .glass-panel .dropdown-item:hover {
+  background-color: var(--bg-tertiary) !important;
+  color: var(--text-primary) !important;
+}
+
+/* Export dropdown background in dark mode */
+[data-theme="dark"] .glass-panel {
+  background-color: var(--glass-bg) !important;
+}
+
+[data-theme="dark"] .dropdown-menu,
+[data-theme="dark"] .glass-panel .dropdown-menu {
+  background-color: var(--bg-secondary) !important;
+  border-color: var(--border-color) !important;
+}
+
+/* Custom export dropdown styling */
+.export-dropdown {
+  background-color: var(--bg-primary);
+  border-color: var(--border-color);
+  transition: background-color var(--transition-normal), border-color var(--transition-normal);
+}
+
+[data-theme="dark"] .export-dropdown {
+  background-color: var(--bg-secondary);
+  border-color: var(--border-color);
+}
+
+.export-dropdown-item {
+  background-color: transparent;
+  color: var(--text-primary);
+  border: none;
+  transition: background-color var(--transition-fast), color var(--transition-fast);
+}
+
+.export-dropdown-item:hover {
+  background-color: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+/* Room input field styling */
+.room-input {
+  background-color: var(--bg-tertiary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
   padding: 4px 8px;
-  background: var(--code-bg);
+  transition: background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
+}
+
+.room-input:focus {
+  outline: none;
+  border-color: var(--accent-primary);
+  background-color: var(--bg-primary);
+}
+
+.room-input::placeholder {
+  color: var(--text-muted);
+}
+
+/* Chat Resize Handle */
+.chat-resize-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -4px;
+  width: 8px;
+  cursor: col-resize;
+  background-color: transparent;
+  transition: background-color var(--transition-fast);
+  opacity: 0.5;
+}
+
+.chat-resize-handle:hover,
+.chat-resize-handle:active {
+  background-color: var(--accent-primary);
+  opacity: 1;
+}
+
+.chat-resize-handle::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 2px;
+  height: 20px;
+  background-color: var(--text-muted);
+  border-radius: 1px;
+}
+
+.chat-resize-handle:hover::before {
+  background-color: var(--bg-primary);
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  /* Header adjustments */
+  header {
+    flex-direction: column;
+    gap: 1rem;
+  }
+  
+  .glass-panel {
+    padding: 0.5rem 1rem !important;
+  }
+  
+  /* Room input smaller on mobile */
+  .room-input {
+    width: 80px !important;
+    font-size: 12px !important;
+  }
+  
+  /* Tool buttons smaller */
+  .tool-btn {
+    width: 32px;
+    height: 32px;
+  }
+  
+  /* Action buttons stack on mobile */
+  .d-flex.align-items-center.gap-2.pointer-events-auto {
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+  
+  .glass-panel.btn {
+    padding: 0.5rem 0.75rem;
+  }
+  
+  .glass-panel.btn .small {
+    display: none;
+  }
+  
+  /* Chat drawer full width on mobile */
+  .chat-drawer {
+    width: 100% !important;
+    max-width: 100%;
+  }
+  
+  /* Hide resize handle on mobile */
+  .chat-resize-handle {
+    display: none;
+  }
+  
+  /* Canvas toolbar at bottom on mobile */
+  .position-absolute.bottom-0 {
+    left: 0;
+    right: 0;
+    bottom: 0;
+  }
+  
+  /* Adjust chat messages for mobile */
+  .chat-content {
+    font-size: 14px;
+  }
+}
+
+@media (max-width: 480px) {
+  /* Further adjustments for small screens */
+  .glass-panel {
+    padding: 0.4rem 0.8rem !important;
+  }
+  
+  .room-input {
+    width: 60px !important;
+    font-size: 11px !important;
+  }
+  
+  .tool-btn {
+    width: 28px;
+    height: 28px;
+  }
+  
+  .glass-panel.btn {
+    padding: 0.4rem 0.6rem;
+  }
+}
+
+/* Chat Box Animations */
+.chat-drawer {
+  animation: slideInRight 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes slideInRight {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.chat-content {
+  animation: fadeIn 0.4s ease-out 0.1s both;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Dark mode form control overrides */
+[data-theme="dark"] input,
+[data-theme="dark"] textarea,
+[data-theme="dark"] select,
+[data-theme="dark"] .form-control {
+  background-color: var(--bg-secondary) !important;
+  color: var(--text-primary) !important;
+  border-color: var(--border-color) !important;
+}
+
+[data-theme="dark"] input::placeholder,
+[data-theme="dark"] textarea::placeholder,
+[data-theme="dark"] .form-control::placeholder {
+  color: var(--text-muted) !important;
+  opacity: 0.8;
+}
+
+[data-theme="dark"] input:focus,
+[data-theme="dark"] textarea:focus,
+[data-theme="dark"] select:focus,
+[data-theme="dark"] .form-control:focus {
+  background-color: var(--bg-secondary) !important;
+  color: var(--text-primary) !important;
+  border-color: var(--accent-primary) !important;
+  box-shadow: 0 0 0 0.25rem rgba(129, 140, 248, 0.25) !important;
 }
