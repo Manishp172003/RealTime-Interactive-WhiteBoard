@@ -12,6 +12,16 @@ function App() {
   const [keycloakError, setKeycloakError] = useState<string | null>(null);
   const isInitialized = useRef<boolean>(false);
 
+  // Check if Keycloak is configured for the current environment
+  const isLocal = typeof window !== 'undefined' && (
+    window.location.hostname === 'localhost' || 
+    window.location.hostname === '127.0.0.1'
+  );
+  const customKeycloakUrl = import.meta.env.VITE_KEYCLOAK_URL;
+  const isKeycloakConfigured = Boolean(
+    (customKeycloakUrl && !customKeycloakUrl.includes('localhost')) || isLocal
+  );
+
   // Get room ID from URL parameters
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
@@ -25,12 +35,24 @@ function App() {
     if (isInitialized.current) return;
     isInitialized.current = true;
 
+    // In production without a public Keycloak URL, skip Keycloak init to avoid ERR_CONNECTION_REFUSED
+    if (!isKeycloakConfigured) {
+      setLoading(false);
+      return;
+    }
+
+    // Safety timeout in case local Keycloak is offline so it never hangs the page
+    const timer = setTimeout(() => {
+      setLoading(false);
+    }, 2000);
+
+    // Initialize without forcing check-sso redirect so unauthenticated visitors are never redirected to localhost
     keycloak
       .init({
-        onLoad: 'check-sso',
         checkLoginIframe: false,
       })
       .then((auth) => {
+        clearTimeout(timer);
         setAuthenticated(auth);
         if (auth && keycloak.tokenParsed) {
           const name =
@@ -41,18 +63,26 @@ function App() {
         }
       })
       .catch((err) => {
-        console.warn('Keycloak not reachable (using guest mode fallback):', err);
-        setKeycloakError('Keycloak is currently offline or unreachable.');
+        clearTimeout(timer);
+        console.warn('Keycloak initialization skipped or unavailable:', err);
       })
       .finally(() => {
+        clearTimeout(timer);
         setLoading(false);
       });
-  }, []);
+  }, [isKeycloakConfigured]);
 
   const handleKeycloakLogin = () => {
+    if (!isKeycloakConfigured) {
+      setKeycloakError(
+        'Keycloak SSO is configured for local Docker enterprise development. Use Guest Mode above to collaborate instantly on this live demo!'
+      );
+      return;
+    }
+
     keycloak.login().catch((err) => {
       console.error('Login redirect failed:', err);
-      alert('Could not connect to Keycloak server. You can continue in Guest Demo Mode.');
+      setKeycloakError('Could not connect to Keycloak server. You can continue in Guest Demo Mode.');
     });
   };
 
@@ -63,13 +93,18 @@ function App() {
     setAuthenticated(true);
   };
 
+  const handleLogout = () => {
+    setAuthenticated(false);
+    setUsername('');
+  };
+
   if (loading) {
     return (
       <div className="d-flex justify-content-center align-items-center vh-100 bg-light">
         <div className="spinner-border text-primary" role="status">
           <span className="visually-hidden">Loading...</span>
         </div>
-        <span className="ms-3 text-secondary fs-5">Connecting to Authentication...</span>
+        <span className="ms-3 text-secondary fs-5">Loading CollabBoard...</span>
       </div>
     );
   }
@@ -141,7 +176,7 @@ function App() {
 
   return (
     <div className="w-100 vh-100 overflow-hidden">
-      <Whiteboard username={username} initialRoomId={initialRoomId} />
+      <Whiteboard username={username} initialRoomId={initialRoomId} onLogout={handleLogout} />
     </div>
   );
 }

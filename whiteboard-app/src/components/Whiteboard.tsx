@@ -94,11 +94,12 @@ interface EmojiBurst {
 interface WhiteboardProps {
   username: string;
   initialRoomId?: string;
+  onLogout?: () => void;
 }
 
 const SOCKET_SERVER_URL = import.meta.env.VITE_SOCKET_SERVER_URL || 'http://localhost:5000';
 
-export const Whiteboard: React.FC<WhiteboardProps> = ({ username, initialRoomId }) => {
+export const Whiteboard: React.FC<WhiteboardProps> = ({ username, initialRoomId, onLogout }) => {
   const [lines, setLines] = useState<LineData[]>([]);
   const [stickies, setStickies] = useState<StickyNote[]>([]);
   const [canvasTexts, setCanvasTexts] = useState<CanvasText[]>([]);
@@ -243,6 +244,16 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ username, initialRoomId 
     setTheme(newTheme);
     document.documentElement.setAttribute('data-theme', newTheme);
     localStorage.setItem('theme', newTheme);
+  };
+
+  const handleSignOut = () => {
+    if (keycloak.authenticated) {
+      keycloak.logout({ redirectUri: window.location.origin });
+    } else if (onLogout) {
+      onLogout();
+    } else {
+      window.location.reload();
+    }
   };
 
   useEffect(() => {
@@ -872,7 +883,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ username, initialRoomId 
       setEmailStatus(null);
 
       try {
-        const response = await fetch('http://localhost:5000/api/send-invite', {
+        const response = await fetch(`${SOCKET_SERVER_URL}/api/send-invite`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -1295,7 +1306,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ username, initialRoomId 
                 <div className="border-top py-1">
                   <button
                     className="w-100 btn btn-link text-decoration-none text-start px-3 py-2 small d-flex align-items-center gap-2 text-danger border-0"
-                    onClick={() => keycloak.logout()}
+                    onClick={handleSignOut}
                   >
                     <LogOut size={16} />
                     <span className="fw-semibold">Sign Out</span>
