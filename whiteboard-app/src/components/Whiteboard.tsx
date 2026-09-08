@@ -26,7 +26,6 @@ import {
   Undo2, 
   Redo2, 
   Trash2,
-  X,
   Square,
   Circle as CircleIcon,
   ArrowUpRight,
