@@ -2,9 +2,9 @@
 import Keycloak from 'keycloak-js';
 
 const keycloak = new Keycloak({
-  url: 'http://localhost:8080',
-  realm: 'whiteboard-realm',
-  clientId: 'react-client',
+  url: import.meta.env.VITE_KEYCLOAK_URL || 'http://localhost:8080',
+  realm: import.meta.env.VITE_KEYCLOAK_REALM || 'whiteboard-realm',
+  clientId: import.meta.env.VITE_KEYCLOAK_CLIENT_ID || 'react-client',
 });
 
 export default keycloak;

@@ -18,9 +18,10 @@ const io = new Server(server, {
   },
 });
 
-// Store canvas state and sticky notes per room in memory
+// Store canvas state, sticky notes, and text labels per room in memory
 const roomState = {};
 const roomStickies = {};
+const roomTexts = {};
 const roomUserCount = {};
 
 io.on('connection', (socket) => {
@@ -35,6 +36,7 @@ io.on('connection', (socket) => {
     // Initialize room state and user count
     if (!roomState[roomId]) roomState[roomId] = [];
     if (!roomStickies[roomId]) roomStickies[roomId] = [];
+    if (!roomTexts[roomId]) roomTexts[roomId] = [];
     if (!roomUserCount[roomId]) roomUserCount[roomId] = 0;
     
     roomUserCount[roomId]++;
@@ -43,6 +45,7 @@ io.on('connection', (socket) => {
     socket.emit('init-canvas', {
       lines: roomState[roomId],
       stickies: roomStickies[roomId],
+      texts: roomTexts[roomId],
     });
 
     socket.to(roomId).emit('user-joined', { userId: socket.id, username });
@@ -55,6 +58,13 @@ io.on('connection', (socket) => {
     if (!roomState[roomId]) roomState[roomId] = [];
     roomState[roomId].push(line);
     socket.to(roomId).emit('draw-line', line);
+  });
+
+  // Laser Pointer drawing (real-time ephemeral broadcast)
+  socket.on('draw-laser', (laserLine) => {
+    const roomId = socket.data.roomId;
+    if (!roomId) return;
+    socket.to(roomId).emit('draw-laser', laserLine);
   });
 
   // Sticky Notes Sync
@@ -80,6 +90,45 @@ io.on('connection', (socket) => {
     if (!roomId || !roomStickies[roomId]) return;
     roomStickies[roomId] = roomStickies[roomId].filter((s) => s.id !== stickyId);
     socket.to(roomId).emit('delete-sticky', stickyId);
+  });
+
+  // Standalone Canvas Text Sync
+  socket.on('add-text', (textObj) => {
+    const roomId = socket.data.roomId;
+    if (!roomId) return;
+    if (!roomTexts[roomId]) roomTexts[roomId] = [];
+    roomTexts[roomId].push(textObj);
+    socket.to(roomId).emit('add-text', textObj);
+  });
+
+  socket.on('update-text', (updatedText) => {
+    const roomId = socket.data.roomId;
+    if (!roomId || !roomTexts[roomId]) return;
+    roomTexts[roomId] = roomTexts[roomId].map((t) =>
+      t.id === updatedText.id ? updatedText : t
+    );
+    socket.to(roomId).emit('update-text', updatedText);
+  });
+
+  socket.on('delete-text', (textId) => {
+    const roomId = socket.data.roomId;
+    if (!roomId || !roomTexts[roomId]) return;
+    roomTexts[roomId] = roomTexts[roomId].filter((t) => t.id !== textId);
+    socket.to(roomId).emit('delete-text', textId);
+  });
+
+  // Load Template (bulk state sync)
+  socket.on('load-template', ({ lines, stickies, texts }) => {
+    const roomId = socket.data.roomId;
+    if (!roomId) return;
+    roomState[roomId] = lines || [];
+    roomStickies[roomId] = stickies || [];
+    roomTexts[roomId] = texts || [];
+    socket.to(roomId).emit('init-canvas', {
+      lines: roomState[roomId],
+      stickies: roomStickies[roomId],
+      texts: roomTexts[roomId],
+    });
   });
 
   // Cursor movements
@@ -132,6 +181,7 @@ io.on('connection', (socket) => {
 
     roomState[roomId] = [];
     roomStickies[roomId] = [];
+    roomTexts[roomId] = [];
     socket.to(roomId).emit('clear-canvas');
   });
 

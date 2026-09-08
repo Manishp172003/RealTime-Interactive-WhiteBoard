@@ -437,6 +437,7 @@ body {
 }
 
 [data-theme="dark"] input:focus,
+[data-theme="dark"] input:focus,
 [data-theme="dark"] textarea:focus,
 [data-theme="dark"] select:focus,
 [data-theme="dark"] .form-control:focus {
@@ -444,4 +445,39 @@ body {
   color: var(--text-primary) !important;
   border-color: var(--accent-primary) !important;
   box-shadow: 0 0 0 0.25rem rgba(129, 140, 248, 0.25) !important;
+}
+
+/* Chat bubble styling */
+.chat-bubble-self {
+  background-color: #2563eb;
+  color: #ffffff;
+}
+
+.chat-bubble-other {
+  background-color: #f1f5f9;
+  color: #0f172a;
+  border: 1px solid #e2e8f0;
+}
+
+.chat-bubble-self strong,
+.chat-bubble-self span,
+.chat-bubble-self p {
+  color: inherit !important;
+}
+
+.chat-bubble-other strong,
+.chat-bubble-other span,
+.chat-bubble-other p {
+  color: inherit !important;
+}
+
+[data-theme="dark"] .chat-bubble-self {
+  background-color: var(--accent-primary);
+  color: #ffffff !important;
+}
+
+[data-theme="dark"] .chat-bubble-other {
+  background-color: var(--bg-secondary);
+  color: var(--text-primary) !important;
+  border-color: var(--border-color);
 }
