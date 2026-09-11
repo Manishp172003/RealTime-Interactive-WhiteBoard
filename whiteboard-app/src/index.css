@@ -189,24 +189,96 @@ body {
   background-color: var(--border-color);
 }
 
-/* Button text color for theme awareness */
-[data-theme="dark"] .glass-panel .text-slate-700,
-[data-theme="dark"] .glass-panel .small,
-[data-theme="dark"] .glass-panel .text-slate-800,
-[data-theme="dark"] .glass-panel .text-muted {
-  color: var(--button-text) !important;
-}
-
-/* Input text in dark mode */
-[data-theme="dark"] .glass-panel input,
-[data-theme="dark"] .glass-panel .text-slate-700 {
+/* Button and Icon Theme Awareness */
+.glass-panel.btn,
+.glass-panel button,
+button.glass-panel {
   color: var(--text-primary) !important;
 }
 
-/* Export dropdown text in dark mode */
+.glass-panel.btn svg,
+.glass-panel button svg,
+button.glass-panel svg {
+  stroke: currentColor;
+}
+
+[data-theme="dark"] .glass-panel.btn,
+[data-theme="dark"] .glass-panel button,
+[data-theme="dark"] button.glass-panel {
+  color: var(--text-primary) !important;
+}
+
+[data-theme="dark"] .glass-panel.btn:hover,
+[data-theme="dark"] .glass-panel button:hover,
+[data-theme="dark"] button.glass-panel:hover {
+  background-color: rgba(255, 255, 255, 0.12) !important;
+  color: #ffffff !important;
+}
+
+/* Ensure all SVGs in glass panels inherit crisp theme stroke */
+[data-theme="dark"] .glass-panel svg {
+  stroke: currentColor;
+}
+
+[data-theme="dark"] .glass-panel svg:not([class*="text-"]) {
+  color: var(--text-primary);
+}
+
+/* Button & text colors in dark mode */
+[data-theme="dark"] .text-slate-700,
+[data-theme="dark"] .text-slate-800,
+[data-theme="dark"] .text-body {
+  color: var(--text-primary) !important;
+}
+
+[data-theme="dark"] .text-secondary {
+  color: var(--text-secondary) !important;
+}
+
+[data-theme="dark"] .text-muted {
+  color: var(--text-muted) !important;
+}
+
+[data-theme="dark"] .bg-light {
+  background-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+[data-theme="dark"] .btn-light {
+  background-color: rgba(255, 255, 255, 0.12) !important;
+  color: var(--text-primary) !important;
+  border: 1px solid rgba(255, 255, 255, 0.2) !important;
+}
+
+[data-theme="dark"] .btn-light:hover {
+  background-color: rgba(255, 255, 255, 0.2) !important;
+  color: #ffffff !important;
+}
+
+/* Modal close button & kbd tag in dark mode */
+[data-theme="dark"] .btn-close {
+  filter: invert(1) grayscale(100%);
+}
+
+[data-theme="dark"] kbd {
+  background-color: var(--bg-tertiary) !important;
+  color: var(--text-primary) !important;
+  border-color: var(--border-color) !important;
+}
+
+/* Input text in dark mode */
+[data-theme="dark"] .glass-panel input {
+  color: var(--text-primary) !important;
+}
+
+/* Dropdown styling in dark mode */
+[data-theme="dark"] .dropdown-menu,
+[data-theme="dark"] .glass-panel .dropdown-menu {
+  background-color: var(--bg-secondary) !important;
+  border-color: var(--border-color) !important;
+}
+
 [data-theme="dark"] .dropdown-menu .dropdown-item,
-[data-theme="dark"] .glass-panel .dropdown-item,
-[data-theme="dark"] .glass-panel button {
+[data-theme="dark"] .glass-panel .dropdown-item {
   color: var(--text-primary) !important;
 }
 
@@ -214,17 +286,6 @@ body {
 [data-theme="dark"] .glass-panel .dropdown-item:hover {
   background-color: var(--bg-tertiary) !important;
   color: var(--text-primary) !important;
-}
-
-/* Export dropdown background in dark mode */
-[data-theme="dark"] .glass-panel {
-  background-color: var(--glass-bg) !important;
-}
-
-[data-theme="dark"] .dropdown-menu,
-[data-theme="dark"] .glass-panel .dropdown-menu {
-  background-color: var(--bg-secondary) !important;
-  border-color: var(--border-color) !important;
 }
 
 /* Custom export dropdown styling */

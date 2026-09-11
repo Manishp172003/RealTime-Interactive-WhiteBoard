@@ -1150,9 +1150,10 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ username, initialRoomId,
                 </button>
               )}
               <button
-                className="btn btn-sm btn-light border-0 rounded-circle p-1 d-flex align-items-center justify-content-center"
+                className="btn btn-sm voice-action-btn border-0 rounded-circle p-1 d-flex align-items-center justify-content-center"
                 onClick={handleCopyRoom}
                 title="Copy Room ID"
+                style={{ width: '26px', height: '26px' }}
               >
                 {copied ? <Check size={14} className="text-success" /> : <Copy size={14} />}
               </button>
@@ -1431,12 +1432,26 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ username, initialRoomId,
 
           {/* Shortcuts Cheat-Sheet Button */}
           <button
-            className="glass-panel btn p-2 rounded-4 d-flex align-items-center justify-content-center text-secondary"
+            className="glass-panel btn p-2 rounded-4 d-flex align-items-center justify-content-center"
             onClick={() => setIsShortcutsModalOpen(true)}
             title="Keyboard Shortcuts (?)"
             style={{ width: '38px', height: '38px' }}
           >
             <HelpCircle size={18} />
+          </button>
+
+          {/* Dark / Light Mode Toggle Button */}
+          <button
+            className="glass-panel btn p-2 rounded-4 d-flex align-items-center justify-content-center"
+            onClick={toggleTheme}
+            title={theme === 'light' ? 'Switch to Dark Mode' : 'Switch to Light Mode'}
+            style={{ width: '38px', height: '38px' }}
+          >
+            {theme === 'light' ? (
+              <Moon size={18} />
+            ) : (
+              <Sun size={18} className="text-warning" />
+            )}
           </button>
 
           {/* Export Dropdown */}
