@@ -32,6 +32,7 @@ const roomState = {};
 const roomStickies = {};
 const roomTexts = {};
 const roomUserCount = {};
+const voiceRooms = {};
 
 io.on('connection', (socket) => {
   console.log(`User connected: ${socket.id}`);
@@ -194,7 +195,90 @@ io.on('connection', (socket) => {
     socket.to(roomId).emit('clear-canvas');
   });
 
+  // --- WebRTC Voice Chat Signaling ---
+  const handleVoiceLeave = () => {
+    const roomId = socket.data.roomId;
+    if (!roomId || !voiceRooms[roomId] || !voiceRooms[roomId][socket.id]) return;
+
+    delete voiceRooms[roomId][socket.id];
+    if (Object.keys(voiceRooms[roomId]).length === 0) {
+      delete voiceRooms[roomId];
+    }
+
+    socket.to(roomId).emit('voice-user-left', socket.id);
+  };
+
+  socket.on('voice-join', () => {
+    const roomId = socket.data.roomId;
+    const username = socket.data.username || 'Anonymous';
+    if (!roomId) return;
+
+    if (!voiceRooms[roomId]) {
+      voiceRooms[roomId] = {};
+    }
+
+    // List of existing participants in this voice room
+    const existingUsers = Object.entries(voiceRooms[roomId]).map(([id, info]) => ({
+      socketId: id,
+      username: info.username,
+      isMuted: info.isMuted,
+      isDeafened: info.isDeafened,
+    }));
+
+    // Register newcomer
+    voiceRooms[roomId][socket.id] = {
+      username,
+      isMuted: false,
+      isDeafened: false,
+    };
+
+    // Send existing users to newcomer so they can initiate peer connections
+    socket.emit('voice-all-users', existingUsers);
+
+    // Notify other peers in this room
+    socket.to(roomId).emit('voice-user-joined', {
+      socketId: socket.id,
+      username,
+      isMuted: false,
+      isDeafened: false,
+    });
+  });
+
+  // Relay WebRTC Offer or Answer to specific target peer
+  socket.on('voice-signal', ({ target, signal }) => {
+    io.to(target).emit('voice-signal', {
+      caller: socket.id,
+      signal,
+    });
+  });
+
+  // Relay ICE Candidate to specific target peer
+  socket.on('voice-ice-candidate', ({ target, candidate }) => {
+    io.to(target).emit('voice-ice-candidate', {
+      caller: socket.id,
+      candidate,
+    });
+  });
+
+  // Broadcast Mute / Deafen status updates
+  socket.on('voice-state-change', ({ isMuted, isDeafened }) => {
+    const roomId = socket.data.roomId;
+    if (!roomId || !voiceRooms[roomId] || !voiceRooms[roomId][socket.id]) return;
+
+    voiceRooms[roomId][socket.id].isMuted = isMuted;
+    voiceRooms[roomId][socket.id].isDeafened = isDeafened;
+
+    socket.to(roomId).emit('voice-user-state-changed', {
+      socketId: socket.id,
+      isMuted,
+      isDeafened,
+    });
+  });
+
+  socket.on('voice-leave', handleVoiceLeave);
+
   socket.on('disconnect', () => {
+    handleVoiceLeave();
     const roomId = socket.data.roomId;
     if (roomId) {
       socket.to(roomId).emit('user-disconnected', socket.id);

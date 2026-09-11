@@ -47,9 +47,17 @@ import {
   ChevronRight,
   Type,
   HelpCircle,
-  Keyboard
+  Keyboard,
+  Mic,
+  MicOff,
+  Headphones,
+  Volume2,
+  VolumeX,
+  PhoneOff,
+  Radio
 } from 'lucide-react';
 import { WHITEBOARD_TEMPLATES, type LineData, type StickyNote } from '../utils/templates';
+import { useVoiceChat } from '../hooks/useVoiceChat';
 
 export interface CanvasText {
   id: string;
@@ -168,6 +176,26 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ username, initialRoomId,
   const exportDropdownRef = useRef<HTMLDivElement>(null);
   const profileDropdownRef = useRef<HTMLDivElement>(null);
   const templatesDropdownRef = useRef<HTMLDivElement>(null);
+  const voiceDropdownRef = useRef<HTMLDivElement>(null);
+
+  const [socketInstance, setSocketInstance] = useState<Socket | null>(null);
+  const [isVoiceListOpen, setIsVoiceListOpen] = useState<boolean>(false);
+
+  // WebRTC Live Voice Chat Hook
+  const {
+    isInVoice,
+    isConnecting: isVoiceConnecting,
+    isMuted,
+    isDeafened,
+    isSpeaking,
+    voiceParticipants,
+    voiceError,
+    joinVoice,
+    leaveVoice,
+    toggleMute,
+    toggleDeafen,
+    clearVoiceError,
+  } = useVoiceChat(socketInstance, username, roomId);
   
   // Toolbar Position, Orientation, Drag & Collapse State
   const [toolbarPos, setToolbarPos] = useState<{ x: number; y: number } | null>(null);
@@ -259,6 +287,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ username, initialRoomId,
   useEffect(() => {
     const socket = io(SOCKET_SERVER_URL);
     socketRef.current = socket;
+    setSocketInstance(socket);
 
     socket.on('connect', () => setIsConnected(true));
     socket.on('disconnect', () => setIsConnected(false));
@@ -352,6 +381,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ username, initialRoomId,
     });
 
     return () => {
+      setSocketInstance(null);
       socket.disconnect();
     };
   }, [roomId, username]);
@@ -402,13 +432,16 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ username, initialRoomId,
       if (templatesDropdownRef.current && !templatesDropdownRef.current.contains(event.target as Node)) {
         setIsTemplatesOpen(false);
       }
+      if (voiceDropdownRef.current && !voiceDropdownRef.current.contains(event.target as Node)) {
+        setIsVoiceListOpen(false);
+      }
     };
 
-    if (isExportDropdownOpen || isProfileDropdownOpen || isTemplatesOpen) {
+    if (isExportDropdownOpen || isProfileDropdownOpen || isTemplatesOpen || isVoiceListOpen) {
       document.addEventListener('mousedown', handleClickOutside);
       return () => document.removeEventListener('mousedown', handleClickOutside);
     }
-  }, [isExportDropdownOpen, isProfileDropdownOpen, isTemplatesOpen]);
+  }, [isExportDropdownOpen, isProfileDropdownOpen, isTemplatesOpen, isVoiceListOpen]);
 
   const handleApplyTemplate = (templateId: string) => {
     const template = WHITEBOARD_TEMPLATES.find((t) => t.id === templateId);
@@ -461,6 +494,10 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ username, initialRoomId,
       else if (key === 'c') setTool('circle');
       else if (key === 'a') setTool('arrow');
       else if (key === 'l') setTool('laser');
+      else if (key === 'm' && isInVoice) {
+        e.preventDefault();
+        toggleMute();
+      }
       else if (e.key === '?' || (e.shiftKey && e.key === '/')) {
         setIsShortcutsModalOpen((prev) => !prev);
       } else if (e.key === 'Escape') {
@@ -482,7 +519,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ username, initialRoomId,
       document.removeEventListener('keydown', handleKeyDown);
       document.removeEventListener('keyup', handleKeyUp);
     };
-  }, [lines, redoStack]);
+  }, [lines, redoStack, isInVoice, toggleMute]);
 
   const handleMouseDown = (e: any) => {
     if (tool === 'hand' || isSpacePressed) return;
@@ -1169,6 +1206,176 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ username, initialRoomId,
               </div>
             )}
           </div>
+
+          {/* WebRTC Live Voice Chat Widget */}
+          {!isInVoice ? (
+            <div className="position-relative" ref={voiceDropdownRef}>
+              <button
+                className={`glass-panel btn p-2 px-3 rounded-4 d-flex align-items-center gap-2 ${
+                  isVoiceConnecting ? 'opacity-75' : ''
+                }`}
+                onClick={joinVoice}
+                disabled={isVoiceConnecting}
+                title="Join Live Voice Chat (WebRTC)"
+              >
+                {isVoiceConnecting ? (
+                  <div className="spinner-border spinner-border-sm text-success" role="status" style={{ width: '15px', height: '15px' }} />
+                ) : (
+                  <Headphones size={16} className="text-success" />
+                )}
+                <span className="fw-semibold text-slate-700 small d-none d-md-inline">
+                  {isVoiceConnecting ? 'Connecting...' : 'Join Voice'}
+                </span>
+                {voiceParticipants.length > 0 && (
+                  <span className="badge rounded-pill bg-success" style={{ fontSize: '10px' }}>
+                    {voiceParticipants.length}
+                  </span>
+                )}
+              </button>
+
+              {voiceError && (
+                <div
+                  className="position-absolute top-100 end-0 mt-2 glass-panel shadow-lg border rounded-3 p-3 text-start z-4"
+                  style={{ width: '280px' }}
+                >
+                  <div className="d-flex justify-content-between align-items-center mb-1">
+                    <strong className="text-danger small">Voice Error</strong>
+                    <button type="button" className="btn-close btn-sm" onClick={clearVoiceError} />
+                  </div>
+                  <p className="small text-muted mb-0" style={{ fontSize: '12px' }}>{voiceError}</p>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="position-relative" ref={voiceDropdownRef}>
+              {/* Active Voice Pill */}
+              <div className="d-flex align-items-center gap-1 glass-panel px-2 py-1 rounded-4 shadow-sm border border-success border-opacity-50">
+                {/* Voice Status / Dropdown Toggle */}
+                <button
+                  className={`btn btn-sm p-1 px-2 rounded-3 d-flex align-items-center gap-1 border-0 ${
+                    isSpeaking ? 'bg-success text-white shadow-sm' : 'text-slate-700 hover-bg'
+                  }`}
+                  style={{ transition: 'all 0.2s ease' }}
+                  onClick={() => setIsVoiceListOpen(!isVoiceListOpen)}
+                  title="View Voice Channel Participants"
+                >
+                  <Radio size={14} className={isSpeaking ? 'text-white' : 'text-success'} />
+                  <span className="fw-semibold small d-none d-sm-inline" style={{ fontSize: '12px' }}>
+                    Voice ({voiceParticipants.length + 1})
+                  </span>
+                </button>
+
+                <div className="vr opacity-25 my-1" />
+
+                {/* Mute Button */}
+                <button
+                  className={`btn btn-sm p-1 px-2 rounded-3 d-flex align-items-center justify-content-center border-0 ${
+                    isMuted ? 'btn-danger text-white' : 'btn-light text-slate-700'
+                  }`}
+                  onClick={toggleMute}
+                  title={isMuted ? 'Unmute Mic (M)' : 'Mute Mic (M)'}
+                  style={{ minWidth: '30px' }}
+                >
+                  {isMuted ? <MicOff size={14} /> : <Mic size={14} />}
+                </button>
+
+                {/* Deafen Button */}
+                <button
+                  className={`btn btn-sm p-1 px-2 rounded-3 d-flex align-items-center justify-content-center border-0 ${
+                    isDeafened ? 'btn-danger text-white' : 'btn-light text-slate-700'
+                  }`}
+                  onClick={toggleDeafen}
+                  title={isDeafened ? 'Undeafen' : 'Deafen (Mute incoming audio)'}
+                  style={{ minWidth: '30px' }}
+                >
+                  {isDeafened ? <VolumeX size={14} /> : <Volume2 size={14} />}
+                </button>
+
+                <div className="vr opacity-25 my-1" />
+
+                {/* Leave Voice Button */}
+                <button
+                  className="btn btn-sm btn-outline-danger p-1 px-2 rounded-3 d-flex align-items-center justify-content-center border-0"
+                  onClick={leaveVoice}
+                  title="Leave Voice Channel"
+                >
+                  <PhoneOff size={14} />
+                </button>
+              </div>
+
+              {/* Voice Participants Popover */}
+              {isVoiceListOpen && (
+                <div
+                  className="position-absolute top-100 end-0 mt-2 glass-panel shadow-lg border rounded-3 overflow-hidden p-2 z-4"
+                  style={{ minWidth: '240px' }}
+                >
+                  <div className="px-2 py-1 mb-1 border-bottom d-flex justify-content-between align-items-center">
+                    <small className="text-muted fw-bold" style={{ fontSize: '11px', textTransform: 'uppercase' }}>
+                      Voice Connected ({voiceParticipants.length + 1})
+                    </small>
+                    <span className="badge bg-success bg-opacity-25 text-success" style={{ fontSize: '10px' }}>
+                      P2P WebRTC
+                    </span>
+                  </div>
+
+                  {/* Current User */}
+                  <div className="d-flex align-items-center justify-content-between p-2 rounded-2 bg-light bg-opacity-50 mb-1">
+                    <div className="d-flex align-items-center gap-2">
+                      <div
+                        className={`rounded-circle d-flex align-items-center justify-content-center text-white ${
+                          isSpeaking ? 'bg-success ring-speaking' : 'bg-primary'
+                        }`}
+                        style={{ width: '26px', height: '26px', fontSize: '11px' }}
+                      >
+                        {username.charAt(0).toUpperCase()}
+                      </div>
+                      <div className="small fw-semibold text-slate-800">
+                        {username} <span className="text-muted fw-normal">(You)</span>
+                      </div>
+                    </div>
+                    <div className="d-flex align-items-center gap-1 text-muted">
+                      {isMuted && <MicOff size={13} className="text-danger" />}
+                      {isDeafened && <VolumeX size={13} className="text-danger" />}
+                      {!isMuted && isSpeaking && <span className="badge bg-success" style={{ fontSize: '9px' }}>Speaking</span>}
+                    </div>
+                  </div>
+
+                  {/* Remote Peers */}
+                  {voiceParticipants.length === 0 ? (
+                    <div className="text-center py-2 text-muted small" style={{ fontSize: '11px' }}>
+                      Waiting for others to join voice...
+                    </div>
+                  ) : (
+                    voiceParticipants.map((peer) => (
+                      <div
+                        key={peer.socketId}
+                        className="d-flex align-items-center justify-content-between p-2 rounded-2 mb-1"
+                      >
+                        <div className="d-flex align-items-center gap-2">
+                          <div
+                            className={`rounded-circle d-flex align-items-center justify-content-center text-white ${
+                              peer.isSpeaking ? 'bg-success ring-speaking' : 'bg-secondary'
+                            }`}
+                            style={{ width: '26px', height: '26px', fontSize: '11px' }}
+                          >
+                            {peer.username.charAt(0).toUpperCase()}
+                          </div>
+                          <div className="small fw-semibold text-slate-800">{peer.username}</div>
+                        </div>
+                        <div className="d-flex align-items-center gap-1 text-muted">
+                          {peer.isMuted && <MicOff size={13} className="text-danger" />}
+                          {peer.isDeafened && <VolumeX size={13} className="text-danger" />}
+                          {!peer.isMuted && peer.isSpeaking && (
+                            <span className="badge bg-success" style={{ fontSize: '9px' }}>Speaking</span>
+                          )}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Invite Button */}
           <button
@@ -1994,22 +2201,32 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ username, initialRoomId,
             </Group>
           ))}
 
-          {/* Live Cursors */}
-          {Object.entries(remoteCursors).map(([id, cursor]) => (
-            <Group key={id} x={cursor.x} y={cursor.y}>
-              <Circle radius={6} fill="#2563eb" stroke="#ffffff" strokeWidth={2} />
-              <Text
-                text={cursor.username}
-                x={12}
-                y={-8}
-                fontSize={11}
-                fontStyle="bold"
-                fill="#1e293b"
-                padding={4}
-                listening={false}
-              />
-            </Group>
-          ))}
+          {/* Live Cursors with Voice Speaking Indicator */}
+          {Object.entries(remoteCursors).map(([id, cursor]) => {
+            const isPeerSpeaking = voiceParticipants.some(
+              (p) => p.username.toLowerCase() === cursor.username.toLowerCase() && p.isSpeaking
+            );
+            return (
+              <Group key={id} x={cursor.x} y={cursor.y}>
+                <Circle
+                  radius={isPeerSpeaking ? 8 : 6}
+                  fill={isPeerSpeaking ? '#22c55e' : '#2563eb'}
+                  stroke="#ffffff"
+                  strokeWidth={2}
+                />
+                <Text
+                  text={`${cursor.username}${isPeerSpeaking ? ' 🔊' : ''}`}
+                  x={12}
+                  y={-8}
+                  fontSize={11}
+                  fontStyle="bold"
+                  fill="#1e293b"
+                  padding={4}
+                  listening={false}
+                />
+              </Group>
+            );
+          })}
 
           {/* Floating Emoji Reactions */}
           {emojiBursts.map((burst) => (
@@ -2223,6 +2440,10 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ username, initialRoomId,
                 <div className="p-2 rounded-3 border bg-light bg-opacity-25 d-flex justify-content-between align-items-center mb-2">
                   <span>Rectangle</span>
                   <kbd className="bg-white border text-dark px-2 py-0.5 rounded shadow-xs fw-semibold">R</kbd>
+                </div>
+                <div className="p-2 rounded-3 border bg-light bg-opacity-25 d-flex justify-content-between align-items-center mb-2">
+                  <span>Mute / Unmute Mic</span>
+                  <kbd className="bg-white border text-dark px-2 py-0.5 rounded shadow-xs fw-semibold">M</kbd>
                 </div>
               </div>
 
