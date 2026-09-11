@@ -54,7 +54,8 @@ import {
   Volume2,
   VolumeX,
   PhoneOff,
-  Radio
+  Radio,
+  Users
 } from 'lucide-react';
 import { WHITEBOARD_TEMPLATES, type LineData, type StickyNote } from '../utils/templates';
 import { useVoiceChat } from '../hooks/useVoiceChat';
@@ -121,6 +122,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ username, initialRoomId,
   const [roomId, setRoomId] = useState<string>(initialRoomId || 'main-room');
   const [inputRoomId, setInputRoomId] = useState<string>(initialRoomId || 'main-room');
   const [isConnected, setIsConnected] = useState<boolean>(false);
+  const [userCount, setUserCount] = useState<number>(1);
   const [copied, setCopied] = useState<boolean>(false);
   const [remoteCursors, setRemoteCursors] = useState<Record<string, UserCursor>>({});
   const [emojiBursts, setEmojiBursts] = useState<EmojiBurst[]>([]);
@@ -294,10 +296,17 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ username, initialRoomId,
 
     socket.emit('join-room', { roomId, username });
 
-    socket.on('init-canvas', (data: { lines: LineData[]; stickies: StickyNote[]; texts?: CanvasText[] }) => {
+    socket.on('init-canvas', (data: { lines: LineData[]; stickies: StickyNote[]; texts?: CanvasText[]; userCount?: number }) => {
       setLines(data.lines || []);
       setStickies(data.stickies || []);
       setCanvasTexts(data.texts || []);
+      if (typeof data.userCount === 'number') {
+        setUserCount(data.userCount);
+      }
+    });
+
+    socket.on('room-user-count', (count: number) => {
+      setUserCount(count);
     });
 
     socket.on('draw-line', (newLine: LineData) => {
@@ -1160,6 +1169,20 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ username, initialRoomId,
                 {isConnected ? 'Live' : 'Connecting'}
               </small>
             </div>
+
+            <div className="vr opacity-25" />
+
+            {/* Active Guest / User Count */}
+            <div
+              className="d-flex align-items-center gap-1 px-2 py-0.5 rounded-3 bg-primary bg-opacity-10 text-primary"
+              title={`${userCount} active collaborator${userCount === 1 ? '' : 's'} in this room`}
+              style={{ fontSize: '12px' }}
+            >
+              <Users size={13} />
+              <span className="fw-bold">
+                {userCount} {userCount === 1 ? 'Guest' : 'Guests'}
+              </span>
+            </div>
           </div>
         </div>
 
@@ -1270,11 +1293,11 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ username, initialRoomId,
                 {/* Mute Button */}
                 <button
                   className={`btn btn-sm p-1 px-2 rounded-3 d-flex align-items-center justify-content-center border-0 ${
-                    isMuted ? 'btn-danger text-white' : 'btn-light text-slate-700'
+                    isMuted ? 'btn-danger text-white' : 'voice-action-btn'
                   }`}
                   onClick={toggleMute}
                   title={isMuted ? 'Unmute Mic (M)' : 'Mute Mic (M)'}
-                  style={{ minWidth: '30px' }}
+                  style={{ minWidth: '32px', height: '28px' }}
                 >
                   {isMuted ? <MicOff size={14} /> : <Mic size={14} />}
                 </button>
@@ -1282,11 +1305,11 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ username, initialRoomId,
                 {/* Deafen Button */}
                 <button
                   className={`btn btn-sm p-1 px-2 rounded-3 d-flex align-items-center justify-content-center border-0 ${
-                    isDeafened ? 'btn-danger text-white' : 'btn-light text-slate-700'
+                    isDeafened ? 'btn-danger text-white' : 'voice-action-btn'
                   }`}
                   onClick={toggleDeafen}
                   title={isDeafened ? 'Undeafen' : 'Deafen (Mute incoming audio)'}
-                  style={{ minWidth: '30px' }}
+                  style={{ minWidth: '32px', height: '28px' }}
                 >
                   {isDeafened ? <VolumeX size={14} /> : <Volume2 size={14} />}
                 </button>
@@ -1295,9 +1318,10 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ username, initialRoomId,
 
                 {/* Leave Voice Button */}
                 <button
-                  className="btn btn-sm btn-outline-danger p-1 px-2 rounded-3 d-flex align-items-center justify-content-center border-0"
+                  className="btn btn-sm p-1 px-2 rounded-3 d-flex align-items-center justify-content-center border-0 voice-action-btn text-danger"
                   onClick={leaveVoice}
                   title="Leave Voice Channel"
+                  style={{ minWidth: '32px', height: '28px' }}
                 >
                   <PhoneOff size={14} />
                 </button>

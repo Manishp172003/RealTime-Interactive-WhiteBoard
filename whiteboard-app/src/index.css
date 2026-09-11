@@ -499,3 +499,31 @@ body {
   animation: speakingPulse 1.2s infinite ease-out;
   border: 2px solid #ffffff !important;
 }
+
+/* Voice Chat Control Buttons (Dark & Light Mode Polish) */
+.voice-action-btn {
+  background-color: rgba(15, 23, 42, 0.08);
+  color: #1e293b;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  transition: all 0.2s ease;
+}
+
+.voice-action-btn:hover {
+  background-color: rgba(15, 23, 42, 0.16);
+  color: #0f172a;
+}
+
+[data-theme="dark"] .voice-action-btn {
+  background-color: rgba(255, 255, 255, 0.14) !important;
+  color: #f8fafc !important;
+  border: 1px solid rgba(255, 255, 255, 0.2) !important;
+}
+
+[data-theme="dark"] .voice-action-btn:hover {
+  background-color: rgba(255, 255, 255, 0.24) !important;
+  color: #ffffff !important;
+}
+
+.voice-action-btn svg {
+  color: currentColor;
+}

@@ -51,11 +51,15 @@ io.on('connection', (socket) => {
     
     roomUserCount[roomId]++;
 
+    // Broadcast updated active guest/user count to the room
+    io.to(roomId).emit('room-user-count', roomUserCount[roomId]);
+
     // Send current state to newly joined user
     socket.emit('init-canvas', {
       lines: roomState[roomId],
       stickies: roomStickies[roomId],
       texts: roomTexts[roomId],
+      userCount: roomUserCount[roomId],
     });
 
     socket.to(roomId).emit('user-joined', { userId: socket.id, username });
@@ -286,6 +290,7 @@ io.on('connection', (socket) => {
       // Decrement user count
       if (roomUserCount[roomId]) {
         roomUserCount[roomId]--;
+        io.to(roomId).emit('room-user-count', roomUserCount[roomId]);
         
         // Clear room state when last user leaves
         if (roomUserCount[roomId] === 0) {
