@@ -31,6 +31,7 @@ export function useVoiceChat(socket: Socket | null, _username: string, roomId: s
   const localStreamRef = useRef<MediaStream | null>(null);
   const peersRef = useRef<Record<string, RTCPeerConnection>>({});
   const audioElementsRef = useRef<Record<string, HTMLAudioElement>>({});
+  const iceCandidatesQueueRef = useRef<Record<string, RTCIceCandidateInit[]>>({});
   const audioContextRef = useRef<AudioContext | null>(null);
   const localAnalyserRef = useRef<AnalyserNode | null>(null);
   const remoteAnalysersRef = useRef<Record<string, AnalyserNode>>({});
@@ -54,9 +55,12 @@ export function useVoiceChat(socket: Socket | null, _username: string, roomId: s
 
     if (audioElementsRef.current[peerSocketId]) {
       try {
-        audioElementsRef.current[peerSocketId].pause();
-        audioElementsRef.current[peerSocketId].srcObject = null;
-        audioElementsRef.current[peerSocketId].remove();
+        const audio = audioElementsRef.current[peerSocketId];
+        audio.pause();
+        audio.srcObject = null;
+        if (audio.parentNode) {
+          audio.parentNode.removeChild(audio);
+        }
       } catch (e) {
         console.warn('Error cleaning up audio element:', e);
       }
@@ -64,6 +68,7 @@ export function useVoiceChat(socket: Socket | null, _username: string, roomId: s
     }
 
     delete remoteAnalysersRef.current[peerSocketId];
+    delete iceCandidatesQueueRef.current[peerSocketId];
 
     setVoiceParticipants((prev) => prev.filter((p) => p.socketId !== peerSocketId));
   }, []);
@@ -105,6 +110,21 @@ export function useVoiceChat(socket: Socket | null, _username: string, roomId: s
     setVoiceError(null);
   }, [socket, cleanupPeer]);
 
+  // Drain and apply any queued ICE candidates after remote description is set
+  const processQueuedCandidates = useCallback(async (peerId: string, pc: RTCPeerConnection) => {
+    const queue = iceCandidatesQueueRef.current[peerId];
+    if (queue && queue.length > 0) {
+      for (const candidate of queue) {
+        try {
+          await pc.addIceCandidate(new RTCIceCandidate(candidate));
+        } catch (e) {
+          console.warn('Error adding queued ICE candidate:', e);
+        }
+      }
+      delete iceCandidatesQueueRef.current[peerId];
+    }
+  }, []);
+
   // Create an RTCPeerConnection for a remote peer
   const createPeerConnection = useCallback(
     (peerSocketId: string, isInitiator: boolean) => {
@@ -124,7 +144,7 @@ export function useVoiceChat(socket: Socket | null, _username: string, roomId: s
 
       // Send local ICE candidates to remote peer
       pc.onicecandidate = (event) => {
-        if (event.candidate && socket) {
+        if (event.candidate && socket && socket.connected) {
           socket.emit('voice-ice-candidate', {
             target: peerSocketId,
             candidate: event.candidate,
@@ -140,11 +160,15 @@ export function useVoiceChat(socket: Socket | null, _username: string, roomId: s
         let audio = audioElementsRef.current[peerSocketId];
         if (!audio) {
           audio = document.createElement('audio');
+          audio.id = `remote-audio-${peerSocketId}`;
           audio.autoplay = true;
-          audio.muted = isDeafenedRef.current;
+          audio.setAttribute('playsinline', 'true');
+          audio.style.display = 'none';
+          document.body.appendChild(audio);
           audioElementsRef.current[peerSocketId] = audio;
         }
 
+        audio.muted = isDeafenedRef.current;
         audio.srcObject = remoteStream;
         audio.play().catch((err) => {
           console.warn('Auto-play blocked or failed for remote audio:', err);
@@ -175,7 +199,7 @@ export function useVoiceChat(socket: Socket | null, _username: string, roomId: s
         pc.createOffer({ offerToReceiveAudio: true })
           .then((offer) => pc.setLocalDescription(offer))
           .then(() => {
-            if (socket) {
+            if (socket && socket.connected) {
               socket.emit('voice-signal', {
                 target: peerSocketId,
                 signal: pc.localDescription,
@@ -195,6 +219,13 @@ export function useVoiceChat(socket: Socket | null, _username: string, roomId: s
   // Join the voice channel
   const joinVoice = useCallback(async () => {
     if (isInVoice || isConnecting) return;
+
+    // Check socket connection before requesting microphone
+    if (!socket || !socket.connected) {
+      setVoiceError('Collaboration server is not connected (red dot). The backend server must be running online to connect live voice with other users.');
+      return;
+    }
+
     setIsConnecting(true);
     setVoiceError(null);
 
@@ -273,9 +304,7 @@ export function useVoiceChat(socket: Socket | null, _username: string, roomId: s
       }
 
       // 3. Emit voice-join to Socket server
-      if (socket && socket.connected) {
-        socket.emit('voice-join');
-      }
+      socket.emit('voice-join');
 
       setIsInVoice(true);
       setIsConnecting(false);
@@ -361,13 +390,17 @@ export function useVoiceChat(socket: Socket | null, _username: string, roomId: s
         }
         try {
           await pc.setRemoteDescription(new RTCSessionDescription(signal));
+          await processQueuedCandidates(caller, pc);
+
           const answer = await pc.createAnswer();
           await pc.setLocalDescription(answer);
 
-          socket.emit('voice-signal', {
-            target: caller,
-            signal: pc.localDescription,
-          });
+          if (socket && socket.connected) {
+            socket.emit('voice-signal', {
+              target: caller,
+              signal: pc.localDescription,
+            });
+          }
         } catch (err) {
           console.error('Error handling offer from peer:', caller, err);
         }
@@ -375,6 +408,7 @@ export function useVoiceChat(socket: Socket | null, _username: string, roomId: s
         if (pc) {
           try {
             await pc.setRemoteDescription(new RTCSessionDescription(signal));
+            await processQueuedCandidates(caller, pc);
           } catch (err) {
             console.error('Error handling answer from peer:', caller, err);
           }
@@ -385,12 +419,18 @@ export function useVoiceChat(socket: Socket | null, _username: string, roomId: s
     // 4. ICE candidate received
     const handleVoiceIceCandidate = async ({ caller, candidate }: { caller: string; candidate: RTCIceCandidateInit }) => {
       const pc = peersRef.current[caller];
-      if (pc && candidate) {
+      if (pc && pc.remoteDescription && pc.remoteDescription.type) {
         try {
           await pc.addIceCandidate(new RTCIceCandidate(candidate));
         } catch (err) {
           console.warn('Error adding ICE candidate from peer:', caller, err);
         }
+      } else {
+        // Queue candidates until remote description is set
+        if (!iceCandidatesQueueRef.current[caller]) {
+          iceCandidatesQueueRef.current[caller] = [];
+        }
+        iceCandidatesQueueRef.current[caller].push(candidate);
       }
     };
 
@@ -421,7 +461,7 @@ export function useVoiceChat(socket: Socket | null, _username: string, roomId: s
       socket.off('voice-user-state-changed', handleVoiceUserStateChanged);
       socket.off('voice-user-left', handleVoiceUserLeft);
     };
-  }, [socket, createPeerConnection, cleanupPeer]);
+  }, [socket, createPeerConnection, cleanupPeer, processQueuedCandidates]);
 
   // Automatically leave voice when room changes or unmounts
   useEffect(() => {
