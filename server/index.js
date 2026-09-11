@@ -199,7 +199,7 @@ io.on('connection', (socket) => {
     socket.to(roomId).emit('clear-canvas');
   });
 
-  // --- WebRTC Voice Chat Signaling ---
+  // --- Live Voice Chat Engine (Audio Streaming & WebRTC Hybrid Relay) ---
   const handleVoiceLeave = () => {
     const roomId = socket.data.roomId;
     if (!roomId || !voiceRooms[roomId] || !voiceRooms[roomId][socket.id]) return;
@@ -209,6 +209,17 @@ io.on('connection', (socket) => {
       delete voiceRooms[roomId];
     }
 
+    const remainingUsers = voiceRooms[roomId]
+      ? Object.entries(voiceRooms[roomId]).map(([id, info]) => ({
+          socketId: id,
+          username: info.username,
+          isMuted: info.isMuted,
+          isDeafened: info.isDeafened,
+        }))
+      : [];
+
+    // Inform all clients in the room of updated participant list
+    io.to(roomId).emit('voice-all-users', remainingUsers);
     socket.to(roomId).emit('voice-user-left', socket.id);
   };
 
@@ -221,34 +232,38 @@ io.on('connection', (socket) => {
       voiceRooms[roomId] = {};
     }
 
-    // List of existing participants in this voice room
-    const existingUsers = Object.entries(voiceRooms[roomId]).map(([id, info]) => ({
-      socketId: id,
-      username: info.username,
-      isMuted: info.isMuted,
-      isDeafened: info.isDeafened,
-    }));
-
-    // Register newcomer
+    // Register user in active voice room
     voiceRooms[roomId][socket.id] = {
       username,
       isMuted: false,
       isDeafened: false,
     };
 
-    // Send existing users to newcomer so they can initiate peer connections
-    socket.emit('voice-all-users', existingUsers);
+    // List of all participants in this voice room
+    const allUsers = Object.entries(voiceRooms[roomId]).map(([id, info]) => ({
+      socketId: id,
+      username: info.username,
+      isMuted: info.isMuted,
+      isDeafened: info.isDeafened,
+    }));
 
-    // Notify other peers in this room
-    socket.to(roomId).emit('voice-user-joined', {
-      socketId: socket.id,
-      username,
-      isMuted: false,
-      isDeafened: false,
+    // Broadcast full updated list to all users in the room
+    io.to(roomId).emit('voice-all-users', allUsers);
+  });
+
+  // Real-time live audio chunk relay (works across strict 4G/5G mobile CGNATs, firewalls, and all networks)
+  socket.on('voice-audio-chunk', (chunk) => {
+    const roomId = socket.data.roomId;
+    if (!roomId || !voiceRooms[roomId] || !voiceRooms[roomId][socket.id]) return;
+
+    // Forward audio chunk to all other peers in the room
+    socket.to(roomId).emit('voice-audio-chunk', {
+      userId: socket.id,
+      chunk,
     });
   });
 
-  // Relay WebRTC Offer or Answer to specific target peer
+  // WebRTC Signal & ICE relays
   socket.on('voice-signal', ({ target, signal }) => {
     io.to(target).emit('voice-signal', {
       caller: socket.id,
@@ -256,7 +271,6 @@ io.on('connection', (socket) => {
     });
   });
 
-  // Relay ICE Candidate to specific target peer
   socket.on('voice-ice-candidate', ({ target, candidate }) => {
     io.to(target).emit('voice-ice-candidate', {
       caller: socket.id,
