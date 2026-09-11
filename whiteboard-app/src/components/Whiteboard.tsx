@@ -106,7 +106,7 @@ interface WhiteboardProps {
   onLogout?: () => void;
 }
 
-const SOCKET_SERVER_URL = import.meta.env.VITE_SOCKET_SERVER_URL || 'http://localhost:5000';
+const SOCKET_SERVER_URL = import.meta.env.VITE_SOCKET_SERVER_URL || 'https://realtime-interactive-whiteboard-backend.onrender.com';
 
 export const Whiteboard: React.FC<WhiteboardProps> = ({ username, initialRoomId, onLogout }) => {
   const [lines, setLines] = useState<LineData[]>([]);
