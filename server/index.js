@@ -385,7 +385,38 @@ app.post('/api/send-invite', async (req, res) => {
   const textBody = `Hello,\n\nYou have been invited to join a live whiteboard session.\n\nRoom ID: ${roomId}\nJoin Link: ${inviteLink}\n\nLooking forward to collaborating!`;
   const mailtoUrl = `mailto:${encodeURIComponent(email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(textBody)}`;
 
-  // 1. Try Resend API over HTTPS (Port 443 - never blocked by Render / cloud providers)
+  // 1. Try Brevo HTTPS API (300 free emails/day to ANY domain, port 443 HTTPS - never blocked)
+  if (process.env.BREVO_API_KEY) {
+    try {
+      const senderEmail = process.env.BREVO_SENDER_EMAIL || process.env.SMTP_USER || 'invites@collabboard.app';
+      const brevoResponse = await fetch('https://api.brevo.com/v3/smtp/email', {
+        method: 'POST',
+        headers: {
+          'api-key': process.env.BREVO_API_KEY,
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: JSON.stringify({
+          sender: { name: 'CollabBoard Whiteboard', email: senderEmail },
+          to: [{ email }],
+          subject,
+          htmlContent: getInviteHtml(roomId, inviteLink),
+        }),
+      });
+
+      const brevoData = await brevoResponse.json();
+      if (brevoResponse.ok) {
+        console.log(`Email sent via Brevo to ${email}:`, brevoData.messageId);
+        return res.status(200).json({ success: true, message: `Invitation email delivered successfully to ${email}!` });
+      } else {
+        console.warn('Brevo error:', brevoData);
+      }
+    } catch (e) {
+      console.warn('Brevo request failed:', e.message);
+    }
+  }
+
+  // 2. Try Resend API over HTTPS (Port 443 - never blocked by Render / cloud providers)
   if (process.env.RESEND_API_KEY) {
     try {
       const resendResponse = await fetch('https://api.resend.com/emails', {

@@ -152,7 +152,12 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ username, initialRoomId,
   const [isInviteModalOpen, setIsInviteModalOpen] = useState<boolean>(false);
   const [inviteEmail, setInviteEmail] = useState<string>('');
   const [isSendingEmail, setIsSendingEmail] = useState<boolean>(false);
-  const [emailStatus, setEmailStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [emailStatus, setEmailStatus] = useState<{ 
+    type: 'success' | 'warning' | 'error'; 
+    message: string; 
+    gmailUrl?: string; 
+    outlookUrl?: string; 
+  } | null>(null);
   
   // Sticky Note Editing State
   const [editingStickyId, setEditingStickyId] = useState<string | null>(null);
@@ -937,7 +942,8 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ username, initialRoomId,
     if (inviteEmail) {
       // Validate email format
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRegex.test(inviteEmail.trim())) {
+      const cleanEmail = inviteEmail.trim();
+      if (!emailRegex.test(cleanEmail)) {
         setEmailStatus({ type: 'error', message: 'Please enter a valid email address.' });
         return;
       }
@@ -947,7 +953,8 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ username, initialRoomId,
 
       const subject = `Join my whiteboard session (Room: ${roomId})`;
       const textBody = `Hello,\n\nYou have been invited to join a live whiteboard session.\n\nRoom ID: ${roomId}\nJoin Link: ${inviteLink}\n\nLooking forward to collaborating!`;
-      const fallbackMailto = `mailto:${encodeURIComponent(inviteEmail.trim())}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(textBody)}`;
+      const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(cleanEmail)}&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(textBody)}`;
+      const outlookUrl = `https://outlook.live.com/mail/0/deeplink/compose?to=${encodeURIComponent(cleanEmail)}&subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(textBody)}`;
 
       try {
         const controller = new AbortController();
@@ -959,7 +966,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ username, initialRoomId,
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            email: inviteEmail.trim(),
+            email: cleanEmail,
             roomId,
             inviteLink,
           }),
@@ -971,36 +978,28 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ username, initialRoomId,
         if (response.ok && data.success) {
           setEmailStatus({ 
             type: 'success', 
-            message: 'Invitation email sent successfully!' 
+            message: `Invitation email sent successfully to ${cleanEmail}!` 
           });
 
           setTimeout(() => {
             closeInviteModal();
           }, 2500);
-        } else if (data.useMailto || !data.success) {
-          // Cloud SMTP is blocked or unconfigured on host - redirect directly to native mail app
-          setEmailStatus({
-            type: 'success',
-            message: 'Opening your email client (Gmail / Outlook / Mail)...',
-          });
-          const targetMailto = data.mailtoUrl || fallbackMailto;
-          window.location.href = targetMailto;
-          setTimeout(() => {
-            closeInviteModal();
-          }, 3000);
         } else {
-          setEmailStatus({ type: 'error', message: data.error || 'Failed to send invitation email.' });
+          setEmailStatus({
+            type: 'warning',
+            message: 'Server mail credentials not configured on Render yet. You can send directly via Gmail Web or Outlook Web below:',
+            gmailUrl,
+            outlookUrl,
+          });
         }
       } catch (err: any) {
-        console.warn('Backend email invite unreachable or timed out. Opening email app directly:', err);
+        console.warn('Backend email invite unreachable or timed out:', err);
         setEmailStatus({
-          type: 'success',
-          message: 'Opening your email client (Gmail / Outlook / Mail)...',
+          type: 'warning',
+          message: 'Server mail credentials not configured on Render yet. You can send directly via Gmail Web or Outlook Web below:',
+          gmailUrl,
+          outlookUrl,
         });
-        window.location.href = fallbackMailto;
-        setTimeout(() => {
-          closeInviteModal();
-        }, 3000);
       } finally {
         setIsSendingEmail(false);
       }
@@ -2614,6 +2613,31 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ username, initialRoomId,
                 Sends automated email or opens pre-filled in your mail client.
               </div>
             </div>
+
+            {inviteEmail.trim() && (
+              <div className="mb-3 p-2 rounded-3 border bg-light bg-opacity-50">
+                <div className="text-muted small fw-semibold mb-2">⚡ Instant 1-Click Send via Web:</div>
+                <div className="d-flex gap-2">
+                  <a
+                    href={`https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(inviteEmail.trim())}&su=${encodeURIComponent(`Join my whiteboard session (Room: ${roomId})`)}&body=${encodeURIComponent(`Hello,\n\nYou have been invited to join a live whiteboard session.\n\nRoom ID: ${roomId}\nJoin Link: ${window.location.origin}?room=${roomId}\n\nLooking forward to collaborating!`)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="btn btn-sm btn-danger text-white flex-grow-1 rounded-2 d-flex align-items-center justify-content-center gap-1 text-decoration-none py-1.5"
+                  >
+                    <Mail size={14} /> Send via Gmail
+                  </a>
+                  <a
+                    href={`https://outlook.live.com/mail/0/deeplink/compose?to=${encodeURIComponent(inviteEmail.trim())}&subject=${encodeURIComponent(`Join my whiteboard session (Room: ${roomId})`)}&body=${encodeURIComponent(`Hello,\n\nYou have been invited to join a live whiteboard session.\n\nRoom ID: ${roomId}\nJoin Link: ${window.location.origin}?room=${roomId}\n\nLooking forward to collaborating!`)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="btn btn-sm btn-primary text-white flex-grow-1 rounded-2 d-flex align-items-center justify-content-center gap-1 text-decoration-none py-1.5"
+                  >
+                    <Mail size={14} /> Send via Outlook
+                  </a>
+                </div>
+              </div>
+            )}
+
             <div className="mb-3">
               <label className="form-label small fw-semibold">Invite Link</label>
               <div className="input-group">
@@ -2634,8 +2658,36 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ username, initialRoomId,
             </div>
 
             {emailStatus && (
-              <div className={`alert py-2 px-3 small rounded-3 mb-3 ${emailStatus.type === 'success' ? 'alert-success' : 'alert-danger'}`}>
-                {emailStatus.message}
+              <div className={`alert py-2 px-3 small rounded-3 mb-3 ${
+                emailStatus.type === 'success' 
+                  ? 'alert-success' 
+                  : emailStatus.type === 'warning' 
+                  ? 'alert-warning' 
+                  : 'alert-danger'
+              }`}>
+                <div className="mb-1">{emailStatus.message}</div>
+                {emailStatus.gmailUrl && (
+                  <div className="d-flex flex-wrap gap-2 mt-2">
+                    <a
+                      href={emailStatus.gmailUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="btn btn-sm btn-danger text-white rounded-2 d-flex align-items-center gap-1 text-decoration-none"
+                    >
+                      <Mail size={13} /> Open in Gmail Web
+                    </a>
+                    {emailStatus.outlookUrl && (
+                      <a
+                        href={emailStatus.outlookUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="btn btn-sm btn-primary text-white rounded-2 d-flex align-items-center gap-1 text-decoration-none"
+                      >
+                        <Mail size={13} /> Open in Outlook Web
+                      </a>
+                    )}
+                  </div>
+                )}
               </div>
             )}
 
@@ -2650,7 +2702,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ username, initialRoomId,
                     Sending...
                   </>
                 ) : inviteEmail ? (
-                  'Send Email'
+                  'Send via Server'
                 ) : (
                   'Copy Link'
                 )}
