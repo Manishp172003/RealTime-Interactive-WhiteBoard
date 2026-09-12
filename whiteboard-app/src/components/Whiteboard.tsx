@@ -1097,23 +1097,23 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ username, initialRoomId,
   return (
     <div className="position-relative w-100 vh-100 overflow-hidden canvas-grid-bg">
       {/* Top Header Bar */}
-      <header className="position-absolute top-0 start-0 end-0 p-2 p-md-3 z-3 d-flex justify-content-between align-items-center pointer-events-none flex-wrap gap-2">
+      <header className="position-absolute top-0 start-0 end-0 p-2 p-md-3 z-3 d-flex justify-content-between align-items-center pointer-events-none flex-nowrap gap-2" style={{ maxWidth: '100vw' }}>
         {/* Left Unified Session Panel */}
-        <div className="d-flex align-items-center gap-2 pointer-events-auto">
-          <div className="glass-panel px-2 px-md-3 py-2 rounded-4 d-flex align-items-center gap-2 gap-md-3">
-            <div className="d-flex align-items-center gap-2">
-              <Palette size={20} className="text-primary" />
-              <span className="fw-bold text-slate-800 fs-6 d-none d-sm-inline">Whiteboard</span>
+        <div className="d-flex align-items-center gap-2 pointer-events-auto flex-shrink-0">
+          <div className="glass-panel px-2 px-md-3 py-1.5 py-md-2 rounded-4 d-flex align-items-center gap-1.5 gap-md-2">
+            <div className="d-flex align-items-center gap-1.5">
+              <Palette size={18} className="text-primary" />
+              <span className="fw-bold text-slate-800 fs-6 d-none d-md-inline">Whiteboard</span>
             </div>
 
-            <div className="vr opacity-25 d-none d-sm-block" />
+            <div className="vr opacity-25 d-none d-md-block" />
 
             <div className="d-flex align-items-center gap-1 gap-md-2">
-              <small className="text-muted fw-semibold d-none d-sm-inline">Room:</small>
+              <small className="text-muted fw-semibold d-none d-xl-inline">Room:</small>
               <input
                 type="text"
                 className="room-input rounded-3 fw-medium px-2 py-0"
-                style={{ width: '90px', fontSize: '13px', border: '1px solid rgba(255,255,255,0.1)' }}
+                style={{ width: '82px', fontSize: '12px', border: '1px solid rgba(255,255,255,0.1)' }}
                 value={inputRoomId}
                 onChange={(e) => setInputRoomId(e.target.value)}
                 onKeyDown={(e) => {
@@ -1144,9 +1144,9 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ username, initialRoomId,
                 className="btn btn-sm voice-action-btn border-0 rounded-circle p-1 d-flex align-items-center justify-content-center"
                 onClick={handleCopyRoom}
                 title="Copy Room ID"
-                style={{ width: '26px', height: '26px' }}
+                style={{ width: '24px', height: '24px' }}
               >
-                {copied ? <Check size={14} className="text-success" /> : <Copy size={14} />}
+                {copied ? <Check size={13} className="text-success" /> : <Copy size={13} />}
               </button>
             </div>
 
@@ -1157,7 +1157,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ username, initialRoomId,
                 className={`rounded-circle ${isConnected ? 'bg-success' : 'bg-danger'}`}
                 style={{ width: '8px', height: '8px' }}
               />
-              <small className="fw-semibold text-secondary d-none d-md-inline" style={{ fontSize: '12px' }}>
+              <small className="fw-semibold text-secondary d-none d-xl-inline" style={{ fontSize: '12px' }}>
                 {isConnected ? 'Live' : 'Connecting'}
               </small>
             </div>
@@ -1172,24 +1172,24 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ username, initialRoomId,
             >
               <Users size={13} />
               <span className="fw-bold">
-                {userCount} {userCount === 1 ? 'Guest' : 'Guests'}
+                {userCount} <span className="d-none d-md-inline">{userCount === 1 ? 'Guest' : 'Guests'}</span>
               </span>
             </div>
           </div>
         </div>
 
         {/* Right Consolidated Action Bar */}
-        <div className="d-flex align-items-center gap-2 pointer-events-auto">
+        <div className="d-flex align-items-center gap-1 gap-md-2 pointer-events-auto flex-shrink-0">
           {/* Templates Dropdown */}
           <div className="position-relative" ref={templatesDropdownRef}>
             <button
-              className="glass-panel btn p-2 px-3 rounded-4 d-flex align-items-center gap-2"
+              className="glass-panel btn p-2 px-2 px-md-2.5 px-xl-3 rounded-4 d-flex align-items-center gap-1.5"
               onClick={() => setIsTemplatesOpen(!isTemplatesOpen)}
               title="Board Templates"
             >
               <LayoutTemplate size={16} className="text-primary" />
-              <span className="fw-semibold text-slate-700 small d-none d-md-inline">Templates</span>
-              <span className="small text-secondary" style={{ fontSize: '10px' }}>▼</span>
+              <span className="fw-semibold text-slate-700 small d-none d-xl-inline">Templates</span>
+              <span className="small text-secondary d-none d-sm-inline" style={{ fontSize: '10px' }}>▼</span>
             </button>
             {isTemplatesOpen && (
               <div className="position-absolute top-100 end-0 mt-2 glass-panel shadow-lg border rounded-3 overflow-hidden p-2" style={{ minWidth: '280px', zIndex: 1000 }}>
@@ -1227,7 +1227,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ username, initialRoomId,
             <div className="position-relative d-flex align-items-center gap-1" ref={voiceDropdownRef}>
               {/* Join Voice Button */}
               <button
-                className={`glass-panel btn p-2 px-3 rounded-4 d-flex align-items-center gap-2 ${
+                className={`glass-panel btn p-2 px-2 px-md-2.5 px-xl-3 rounded-4 d-flex align-items-center gap-1.5 ${
                   isVoiceConnecting ? 'opacity-75' : ''
                 }`}
                 onClick={() => joinVoice(false)}
@@ -1239,7 +1239,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ username, initialRoomId,
                 ) : (
                   <Headphones size={16} className="text-success" />
                 )}
-                <span className="fw-semibold text-slate-700 small d-none d-md-inline">
+                <span className="fw-semibold text-slate-700 small d-none d-lg-inline">
                   {isVoiceConnecting ? 'Connecting...' : 'Join Voice'}
                 </span>
                 {voiceParticipants.length > 0 && (
@@ -1251,7 +1251,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ username, initialRoomId,
 
               {/* Start Video Call Button */}
               <button
-                className={`glass-panel btn p-2 px-2-5 rounded-4 d-flex align-items-center gap-1-5 ${
+                className={`glass-panel btn p-2 px-2 px-md-2.5 rounded-4 d-flex align-items-center gap-1.5 ${
                   isVoiceConnecting ? 'opacity-75' : ''
                 }`}
                 onClick={() => joinVoice(true)}
@@ -1260,7 +1260,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ username, initialRoomId,
                 style={{ backgroundColor: 'rgba(59, 130, 246, 0.08)', borderColor: 'rgba(59, 130, 246, 0.3)' }}
               >
                 <Video size={16} className="text-primary" />
-                <span className="fw-semibold text-primary small d-none d-lg-inline">
+                <span className="fw-semibold text-primary small d-none d-xl-inline">
                   Video Call
                 </span>
               </button>
@@ -1281,10 +1281,10 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ username, initialRoomId,
           ) : (
             <div className="position-relative" ref={voiceDropdownRef}>
               {/* Active Voice/Video Pill */}
-              <div className="d-flex align-items-center gap-1 glass-panel px-2 py-1 rounded-4 shadow-sm border border-success border-opacity-50">
+              <div className="d-flex align-items-center gap-1 glass-panel px-1.5 px-md-2 py-1 rounded-4 shadow-sm border border-success border-opacity-50 flex-nowrap">
                 {/* Voice Status / Dropdown Toggle */}
                 <button
-                  className={`btn btn-sm p-1 px-2 rounded-3 d-flex align-items-center gap-1 border-0 ${
+                  className={`btn btn-sm p-1 px-1.5 px-md-2 rounded-3 d-flex align-items-center gap-1 border-0 ${
                     isSpeaking ? 'bg-success text-white shadow-sm' : 'text-slate-700 hover-bg'
                   }`}
                   style={{ transition: 'all 0.2s ease' }}
@@ -1292,8 +1292,11 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ username, initialRoomId,
                   title="View Call Participants"
                 >
                   <Radio size={14} className={isSpeaking ? 'text-white' : 'text-success'} />
-                  <span className="fw-semibold small d-none d-sm-inline" style={{ fontSize: '12px' }}>
+                  <span className="fw-semibold small d-none d-lg-inline" style={{ fontSize: '12px' }}>
                     {isVideoEnabled ? 'Video' : 'Voice'} ({voiceParticipants.length + 1})
+                  </span>
+                  <span className="badge rounded-pill bg-success d-inline d-lg-none" style={{ fontSize: '10px' }}>
+                    {voiceParticipants.length + 1}
                   </span>
                 </button>
 
@@ -1301,36 +1304,36 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ username, initialRoomId,
 
                 {/* Camera Toggle Button */}
                 <button
-                  className={`btn btn-sm p-1 px-2 rounded-3 d-flex align-items-center justify-content-center border-0 ${
+                  className={`btn btn-sm p-1 rounded-3 d-flex align-items-center justify-content-center border-0 ${
                     isVideoEnabled ? 'btn-primary text-white' : 'voice-action-btn'
                   }`}
                   onClick={toggleVideo}
                   title={isVideoEnabled ? 'Turn Off Camera' : 'Turn On Camera'}
-                  style={{ minWidth: '32px', height: '28px' }}
+                  style={{ width: '30px', height: '28px' }}
                 >
                   {isVideoEnabled ? <Video size={14} /> : <VideoOff size={14} />}
                 </button>
 
                 {/* Mute Button */}
                 <button
-                  className={`btn btn-sm p-1 px-2 rounded-3 d-flex align-items-center justify-content-center border-0 ${
+                  className={`btn btn-sm p-1 rounded-3 d-flex align-items-center justify-content-center border-0 ${
                     isMuted ? 'btn-danger text-white' : 'voice-action-btn'
                   }`}
                   onClick={toggleMute}
                   title={isMuted ? 'Unmute Mic (M)' : 'Mute Mic (M)'}
-                  style={{ minWidth: '32px', height: '28px' }}
+                  style={{ width: '30px', height: '28px' }}
                 >
                   {isMuted ? <MicOff size={14} /> : <Mic size={14} />}
                 </button>
 
                 {/* Deafen Button */}
                 <button
-                  className={`btn btn-sm p-1 px-2 rounded-3 d-flex align-items-center justify-content-center border-0 ${
+                  className={`btn btn-sm p-1 rounded-3 d-flex align-items-center justify-content-center border-0 ${
                     isDeafened ? 'btn-danger text-white' : 'voice-action-btn'
                   }`}
                   onClick={toggleDeafen}
                   title={isDeafened ? 'Undeafen' : 'Deafen (Mute incoming audio)'}
-                  style={{ minWidth: '32px', height: '28px' }}
+                  style={{ width: '30px', height: '28px' }}
                 >
                   {isDeafened ? <VolumeX size={14} /> : <Volume2 size={14} />}
                 </button>
@@ -1339,10 +1342,10 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ username, initialRoomId,
 
                 {/* Leave Voice Button */}
                 <button
-                  className="btn btn-sm p-1 px-2 rounded-3 d-flex align-items-center justify-content-center border-0 voice-action-btn text-danger"
+                  className="btn btn-sm p-1 rounded-3 d-flex align-items-center justify-content-center border-0 voice-action-btn text-danger"
                   onClick={leaveVoice}
                   title="Leave Call"
-                  style={{ minWidth: '32px', height: '28px' }}
+                  style={{ width: '30px', height: '28px' }}
                 >
                   <PhoneOff size={14} />
                 </button>
@@ -1424,17 +1427,17 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ username, initialRoomId,
 
           {/* Invite Button */}
           <button
-            className="btn btn-primary p-2 px-3 rounded-4 d-flex align-items-center gap-2 shadow-sm"
+            className="btn btn-primary p-2 px-2 px-md-3 rounded-4 d-flex align-items-center gap-1.5 shadow-sm"
             onClick={() => setIsInviteModalOpen(true)}
             title="Invite users"
           >
             <Mail size={16} />
-            <span className="fw-semibold small d-none d-sm-inline">Invite</span>
+            <span className="fw-semibold small d-none d-lg-inline">Invite</span>
           </button>
 
           {/* Chat Button */}
           <button
-            className="glass-panel btn position-relative p-2 px-3 rounded-4 d-flex align-items-center gap-2"
+            className="glass-panel btn position-relative p-2 px-2 px-md-3 rounded-4 d-flex align-items-center gap-1.5"
             onClick={() => {
               setIsChatOpen(!isChatOpen);
               setUnreadCount(0);
@@ -1442,7 +1445,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ username, initialRoomId,
             title="Live Chat"
           >
             <MessageSquare size={16} />
-            <span className="fw-semibold text-slate-700 small d-none d-md-inline">Chat</span>
+            <span className="fw-semibold text-slate-700 small d-none d-lg-inline">Chat</span>
             {unreadCount > 0 && (
               <span className="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger">
                 {unreadCount}
@@ -1452,20 +1455,20 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ username, initialRoomId,
 
           {/* Shortcuts Cheat-Sheet Button */}
           <button
-            className="glass-panel btn p-2 rounded-4 d-flex align-items-center justify-content-center"
+            className="glass-panel btn p-2 rounded-4 d-none d-sm-flex align-items-center justify-content-center"
             onClick={() => setIsShortcutsModalOpen(true)}
             title="Keyboard Shortcuts (?)"
-            style={{ width: '38px', height: '38px' }}
+            style={{ width: '36px', height: '36px' }}
           >
             <HelpCircle size={18} />
           </button>
 
           {/* Dark / Light Mode Toggle Button */}
           <button
-            className="glass-panel btn p-2 rounded-4 d-flex align-items-center justify-content-center"
+            className="glass-panel btn p-2 rounded-4 d-none d-sm-flex align-items-center justify-content-center"
             onClick={toggleTheme}
             title={theme === 'light' ? 'Switch to Dark Mode' : 'Switch to Light Mode'}
-            style={{ width: '38px', height: '38px' }}
+            style={{ width: '36px', height: '36px' }}
           >
             {theme === 'light' ? (
               <Moon size={18} />
@@ -1477,13 +1480,13 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ username, initialRoomId,
           {/* Export Dropdown */}
           <div className="position-relative" ref={exportDropdownRef}>
             <button
-              className="glass-panel btn p-2 px-3 rounded-4 d-flex align-items-center gap-2"
+              className="glass-panel btn p-2 px-2 px-md-3 rounded-4 d-flex align-items-center gap-1.5"
               onClick={() => setIsExportDropdownOpen(!isExportDropdownOpen)}
               title="Export Whiteboard"
             >
               <Download size={16} />
-              <span className="fw-semibold text-slate-700 small d-none d-md-inline">Export</span>
-              <span className="small text-secondary" style={{ fontSize: '10px' }}>▼</span>
+              <span className="fw-semibold text-slate-700 small d-none d-xl-inline">Export</span>
+              <span className="small text-secondary d-none d-sm-inline" style={{ fontSize: '10px' }}>▼</span>
             </button>
             {isExportDropdownOpen && (
               <div className="position-absolute top-100 end-0 mt-2 glass-panel shadow-lg border rounded-3 overflow-hidden" style={{ minWidth: '200px', zIndex: 1000 }}>
@@ -1525,13 +1528,13 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ username, initialRoomId,
           {/* User Profile & Settings Dropdown */}
           <div className="position-relative" ref={profileDropdownRef}>
             <button
-              className="glass-panel btn p-2 px-3 rounded-4 d-flex align-items-center gap-2"
+              className="glass-panel btn p-2 px-2 px-md-2.5 px-xl-3 rounded-4 d-flex align-items-center gap-1.5"
               onClick={() => setIsProfileDropdownOpen(!isProfileDropdownOpen)}
               title="User Profile & Settings"
             >
               <User size={16} className="text-primary" />
-              <span className="fw-semibold text-primary small d-none d-sm-inline">{username}</span>
-              <span className="small text-secondary" style={{ fontSize: '10px' }}>▼</span>
+              <span className="fw-semibold text-primary small d-none d-lg-inline text-truncate" style={{ maxWidth: '90px' }}>{username}</span>
+              <span className="small text-secondary d-none d-sm-inline" style={{ fontSize: '10px' }}>▼</span>
             </button>
             {isProfileDropdownOpen && (
               <div className="position-absolute top-100 end-0 mt-2 glass-panel shadow-lg border rounded-3 overflow-hidden" style={{ minWidth: '220px', zIndex: 1000 }}>
