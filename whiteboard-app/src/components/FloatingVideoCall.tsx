@@ -61,10 +61,10 @@ const VideoTile: React.FC<{
 
   useEffect(() => {
     const videoEl = videoRef.current;
-    if (videoEl) {
-      if (stream && isVideoActive) {
-        // Always mute the video element so browser autoplay policies never block playback.
-        // Remote speech audio is played via dedicated audio elements/engine.
+    if (!videoEl) return;
+
+    const playVideo = () => {
+      if (videoEl && isVideoActive && stream) {
         videoEl.muted = true;
         if (videoEl.srcObject !== stream) {
           videoEl.srcObject = stream;
@@ -72,22 +72,37 @@ const VideoTile: React.FC<{
         videoEl.play().catch((err) => {
           console.debug('[VideoTile] play error/aborted:', err);
         });
-
-        const vTrack = stream.getVideoTracks()[0];
-        if (vTrack) {
-          const handleUnmute = () => {
-            if (videoRef.current && isVideoActive) {
-              videoRef.current.play().catch(() => {});
-            }
-          };
-          vTrack.addEventListener('unmute', handleUnmute);
-          return () => {
-            vTrack.removeEventListener('unmute', handleUnmute);
-          };
-        }
-      } else {
-        videoEl.srcObject = null;
       }
+    };
+
+    if (stream && isVideoActive) {
+      playVideo();
+
+      // If mobile OS pauses the background video element when camera opens, auto-resume
+      const handlePause = () => {
+        if (isVideoActive && stream) {
+          setTimeout(playVideo, 300);
+        }
+      };
+      videoEl.addEventListener('pause', handlePause);
+
+      const vTrack = stream.getVideoTracks()[0];
+      let handleUnmute: (() => void) | null = null;
+      if (vTrack) {
+        handleUnmute = () => {
+          playVideo();
+        };
+        vTrack.addEventListener('unmute', handleUnmute);
+      }
+
+      return () => {
+        videoEl.removeEventListener('pause', handlePause);
+        if (vTrack && handleUnmute) {
+          vTrack.removeEventListener('unmute', handleUnmute);
+        }
+      };
+    } else {
+      videoEl.srcObject = null;
     }
   }, [stream, isVideoActive]);
 
@@ -195,16 +210,20 @@ export const FloatingVideoCall: React.FC<FloatingVideoCallProps> = ({
 }) => {
   const [isMinimized, setIsMinimized] = useState<boolean>(false);
   const [position, setPosition] = useState<{ x: number; y: number }>(() => {
-    const defaultWidth = 380;
-    const defaultX = typeof window !== 'undefined' ? Math.max(20, window.innerWidth - defaultWidth - 24) : 900;
+    const isMobile = typeof window !== 'undefined' && window.innerWidth < 500;
+    const defaultWidth = isMobile ? Math.min(320, window.innerWidth - 24) : 380;
+    const defaultX = typeof window !== 'undefined' ? Math.max(12, window.innerWidth - defaultWidth - 16) : 900;
     return { x: defaultX, y: 76 };
   });
 
   // Resizable dimensions (width & height)
-  const [size, setSize] = useState<{ width: number; height: number }>(() => ({
-    width: 380,
-    height: 280,
-  }));
+  const [size, setSize] = useState<{ width: number; height: number }>(() => {
+    const isMobile = typeof window !== 'undefined' && window.innerWidth < 500;
+    return {
+      width: isMobile ? Math.min(320, typeof window !== 'undefined' ? window.innerWidth - 24 : 320) : 380,
+      height: isMobile ? 240 : 280,
+    };
+  });
 
   const [isDragging, setIsDragging] = useState<boolean>(false);
   const [isResizing, setIsResizing] = useState<boolean>(false);
@@ -355,8 +374,8 @@ export const FloatingVideoCall: React.FC<FloatingVideoCallProps> = ({
       ref={containerRef}
       className="floating-video-call position-fixed"
       style={{
-        left: `${position.x}px`,
-        top: `${position.y}px`,
+        left: `${Math.max(10, Math.min(typeof window !== 'undefined' ? window.innerWidth - Math.min(size.width, window.innerWidth - 20) - 10 : 800, position.x))}px`,
+        top: `${Math.max(10, Math.min(typeof window !== 'undefined' ? window.innerHeight - size.height - 10 : 600, position.y))}px`,
         zIndex: 1060, // Above canvas and sticky notes
         userSelect: 'none',
       }}
@@ -431,8 +450,10 @@ export const FloatingVideoCall: React.FC<FloatingVideoCallProps> = ({
         <div
           className="rounded-4 shadow-lg overflow-hidden border position-relative d-flex flex-column"
           style={{
-            width: `${size.width}px`,
+            width: `min(${size.width}px, calc(100vw - 20px))`,
             height: `${size.height}px`,
+            maxWidth: 'calc(100vw - 20px)',
+            maxHeight: 'calc(100dvh - 80px)',
             backgroundColor: 'rgba(15, 23, 42, 0.94)',
             backdropFilter: 'blur(20px)',
             borderColor: 'rgba(255, 255, 255, 0.12)',
@@ -534,7 +555,7 @@ export const FloatingVideoCall: React.FC<FloatingVideoCallProps> = ({
             }}
           >
             {/* 1. Self Video / Avatar Tile */}
-            <div style={{ width: '100%', height: '100%', minHeight: 0 }}>
+            <div style={{ width: '100%', height: '100%', minHeight: 0, minWidth: 0, overflow: 'hidden' }}>
               <VideoTile
                 stream={localVideoStream}
                 isVideoActive={isVideoEnabled}
@@ -549,7 +570,7 @@ export const FloatingVideoCall: React.FC<FloatingVideoCallProps> = ({
             {voiceParticipants.map((peer) => (
               <div 
                 key={peer.socketId}
-                style={{ width: '100%', height: '100%', minHeight: 0 }}
+                style={{ width: '100%', height: '100%', minHeight: 0, minWidth: 0, overflow: 'hidden' }}
               >
                 <VideoTile
                   stream={remoteStreams[peer.socketId] || null}

@@ -549,6 +549,7 @@ export function useVoiceChat(socket: Socket | null, _username: string, roomId: s
             width: { ideal: 640 },
             height: { ideal: 480 },
             frameRate: { ideal: 24, max: 30 },
+            facingMode: 'user', // Prefer front selfie camera on phones
           },
           audio: false,
         });
@@ -568,7 +569,6 @@ export function useVoiceChat(socket: Socket | null, _username: string, roomId: s
           const videoTransceiver = transceivers.find((t) => t.receiver.track?.kind === 'video' || t.sender.track?.kind === 'video');
 
           if (videoTransceiver) {
-            videoTransceiver.direction = 'sendrecv';
             sender = videoTransceiver.sender;
             videoSendersRef.current[peerId] = sender;
           }
@@ -583,26 +583,23 @@ export function useVoiceChat(socket: Socket | null, _username: string, roomId: s
             try {
               const newSender = pc.addTrack(videoTrack, stream);
               videoSendersRef.current[peerId] = newSender;
-            } catch (err) {
-              console.warn('Error adding video track to peer:', peerId, err);
-            }
-          }
 
-          if (pc.signalingState === 'stable') {
-            try {
-              const offer = await pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: true });
-              await pc.setLocalDescription(offer);
-              if (socket && socket.connected && pc.localDescription) {
-                socket.emit('voice-signal', {
-                  target: peerId,
-                  signal: {
-                    type: pc.localDescription.type,
-                    sdp: pc.localDescription.sdp,
-                  },
-                });
+              // Only renegotiate if track had to be newly added
+              if (pc.signalingState === 'stable') {
+                const offer = await pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: true });
+                await pc.setLocalDescription(offer);
+                if (socket && socket.connected && pc.localDescription) {
+                  socket.emit('voice-signal', {
+                    target: peerId,
+                    signal: {
+                      type: pc.localDescription.type,
+                      sdp: pc.localDescription.sdp,
+                    },
+                  });
+                }
               }
             } catch (err) {
-              console.warn('Error renegotiating video track with peer:', peerId, err);
+              console.warn('Error adding video track to peer:', peerId, err);
             }
           }
         }
@@ -610,6 +607,13 @@ export function useVoiceChat(socket: Socket | null, _username: string, roomId: s
         if (socket && socket.connected) {
           socket.emit('voice-video-state-change', { isVideoEnabled: true });
         }
+
+        // Auto-resume all video elements in case mobile OS paused them during camera open
+        setTimeout(() => {
+          document.querySelectorAll<HTMLVideoElement>('.floating-video-call video').forEach((v) => {
+            v.play().catch(() => {});
+          });
+        }, 300);
       } catch (err: any) {
         console.warn('Camera access denied or error:', err);
         setVoiceError('Camera access denied. Please allow camera permissions in your browser.');
