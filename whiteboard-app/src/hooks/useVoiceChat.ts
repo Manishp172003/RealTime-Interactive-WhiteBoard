@@ -35,6 +35,7 @@ export function useVoiceChat(socket: Socket | null, _username: string, roomId: s
   const localStreamRef = useRef<MediaStream | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const scriptProcessorRef = useRef<ScriptProcessorNode | null>(null);
+  const audioWorkletNodeRef = useRef<AudioWorkletNode | null>(null);
   const peersRef = useRef<Record<string, RTCPeerConnection>>({});
   const audioElementsRef = useRef<Record<string, HTMLAudioElement>>({});
   const peerAudioQueuesRef = useRef<Record<string, { nextStartTime: number }>>({});
@@ -84,7 +85,14 @@ export function useVoiceChat(socket: Socket | null, _username: string, roomId: s
 
   // Teardown the voice session
   const leaveVoice = useCallback(() => {
-    // Stop recording script processor
+    // Stop recording audio worklet / script processor
+    if (audioWorkletNodeRef.current) {
+      try {
+        audioWorkletNodeRef.current.disconnect();
+      } catch (e) {}
+      audioWorkletNodeRef.current = null;
+    }
+
     if (scriptProcessorRef.current) {
       try {
         scriptProcessorRef.current.disconnect();
@@ -250,25 +258,12 @@ export function useVoiceChat(socket: Socket | null, _username: string, roomId: s
       }
       audioContextRef.current = audioCtx;
 
-      // 3. Setup ScriptProcessor for live audio sampling & streaming
-      const source = audioCtx.createMediaStreamSource(stream);
-      const processor = audioCtx.createScriptProcessor(BUFFER_SIZE, 1, 1);
-      scriptProcessorRef.current = processor;
-
-      // Mute gain connected to destination so Chrome processes audio without local feedback/echo
-      const silentGain = audioCtx.createGain();
-      silentGain.gain.value = 0;
-      source.connect(processor);
-      processor.connect(silentGain);
-      silentGain.connect(audioCtx.destination);
-
-      processor.onaudioprocess = (e) => {
+      // 3. Audio sample processor (shared between AudioWorklet and ScriptProcessor)
+      const processAudioSamples = (input: Float32Array) => {
         if (isMutedRef.current || !socket || !socket.connected) {
           setIsSpeaking(false);
           return;
         }
-
-        const input = e.inputBuffer.getChannelData(0);
 
         // Calculate volume
         let sum = 0;
@@ -297,6 +292,75 @@ export function useVoiceChat(socket: Socket | null, _username: string, roomId: s
           socket.emit('voice-audio-chunk', int16.buffer);
         }
       };
+
+      const source = audioCtx.createMediaStreamSource(stream);
+      let workletInitialized = false;
+
+      // Modern AudioWorkletNode (runs on realtime audio thread, no deprecation warning)
+      if (audioCtx.audioWorklet) {
+        try {
+          const workletCode = `
+            class VoiceCaptureProcessor extends AudioWorkletProcessor {
+              process(inputs) {
+                const input = inputs[0];
+                if (input && input[0]) {
+                  this.port.postMessage(input[0]);
+                }
+                return true;
+              }
+            }
+            registerProcessor('voice-capture-processor', VoiceCaptureProcessor);
+          `;
+          const blob = new Blob([workletCode], { type: 'application/javascript' });
+          const workletUrl = URL.createObjectURL(blob);
+          await audioCtx.audioWorklet.addModule(workletUrl);
+          URL.revokeObjectURL(workletUrl);
+
+          const workletNode = new AudioWorkletNode(audioCtx, 'voice-capture-processor');
+          audioWorkletNodeRef.current = workletNode;
+
+          // Buffer 128-sample worklet chunks into 2048-sample packets (~128ms transmission)
+          const sampleBuffer = new Float32Array(BUFFER_SIZE);
+          let sampleOffset = 0;
+
+          workletNode.port.onmessage = (event: MessageEvent<Float32Array>) => {
+            const chunk = event.data;
+            let chunkOffset = 0;
+            while (chunkOffset < chunk.length) {
+              const toCopy = Math.min(chunk.length - chunkOffset, sampleBuffer.length - sampleOffset);
+              sampleBuffer.set(chunk.subarray(chunkOffset, chunkOffset + toCopy), sampleOffset);
+              sampleOffset += toCopy;
+              chunkOffset += toCopy;
+
+              if (sampleOffset >= sampleBuffer.length) {
+                processAudioSamples(sampleBuffer);
+                sampleOffset = 0;
+              }
+            }
+          };
+
+          source.connect(workletNode);
+          workletInitialized = true;
+          console.log('[Voice Engine] Modern AudioWorkletNode active (zero main-thread blocking)');
+        } catch (workletErr) {
+          console.warn('[Voice Engine] AudioWorklet fallback to ScriptProcessor:', workletErr);
+        }
+      }
+
+      // Fallback for legacy browsers without AudioWorklet support
+      if (!workletInitialized) {
+        const processor = audioCtx.createScriptProcessor(BUFFER_SIZE, 1, 1);
+        scriptProcessorRef.current = processor;
+        const silentGain = audioCtx.createGain();
+        silentGain.gain.value = 0;
+        source.connect(processor);
+        processor.connect(silentGain);
+        silentGain.connect(audioCtx.destination);
+
+        processor.onaudioprocess = (e) => {
+          processAudioSamples(e.inputBuffer.getChannelData(0));
+        };
+      }
 
       // 4. Emit voice-join to Socket server
       socket.emit('voice-join');

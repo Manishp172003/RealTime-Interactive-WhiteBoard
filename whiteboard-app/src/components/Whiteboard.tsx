@@ -55,7 +55,9 @@ import {
   VolumeX,
   PhoneOff,
   Radio,
-  Users
+  Users,
+  Share2,
+  ExternalLink
 } from 'lucide-react';
 import { WHITEBOARD_TEMPLATES, type LineData, type StickyNote } from '../utils/templates';
 import { useVoiceChat } from '../hooks/useVoiceChat';
@@ -915,6 +917,21 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ username, initialRoomId,
     setIsSendingEmail(false);
   };
 
+  const handleNativeShare = async () => {
+    const inviteLink = `${window.location.origin}?room=${roomId}`;
+    if (typeof navigator !== 'undefined' && 'share' in navigator) {
+      try {
+        await navigator.share({
+          title: `Join Whiteboard Session (${roomId})`,
+          text: `Collaborate with me on this real-time whiteboard in room ${roomId}!`,
+          url: inviteLink,
+        });
+      } catch (e) {
+        // User cancelled share dialog
+      }
+    }
+  };
+
   const handleInvite = async () => {
     const inviteLink = `${window.location.origin}?room=${roomId}`;
     if (inviteEmail) {
@@ -928,7 +945,14 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ username, initialRoomId,
       setIsSendingEmail(true);
       setEmailStatus(null);
 
+      const subject = `Join my whiteboard session (Room: ${roomId})`;
+      const textBody = `Hello,\n\nYou have been invited to join a live whiteboard session.\n\nRoom ID: ${roomId}\nJoin Link: ${inviteLink}\n\nLooking forward to collaborating!`;
+      const fallbackMailto = `mailto:${encodeURIComponent(inviteEmail.trim())}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(textBody)}`;
+
       try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 6000);
+
         const response = await fetch(`${SOCKET_SERVER_URL}/api/send-invite`, {
           method: 'POST',
           headers: {
@@ -939,21 +963,28 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ username, initialRoomId,
             roomId,
             inviteLink,
           }),
+          signal: controller.signal,
         });
+        clearTimeout(timeoutId);
 
         const data = await response.json();
-        if (response.ok) {
+        if (response.ok && data.success) {
           setEmailStatus({ 
             type: 'success', 
-            message: data.previewUrl 
-              ? 'Invitation sent via test account. Preview link logged to console.' 
-              : 'Invitation email sent successfully!' 
+            message: 'Invitation email sent successfully!' 
           });
-          
-          if (data.previewUrl) {
-            console.log('Ethereal Mail Preview URL:', data.previewUrl);
-          }
 
+          setTimeout(() => {
+            closeInviteModal();
+          }, 2500);
+        } else if (data.useMailto || !data.success) {
+          // Cloud SMTP is blocked or unconfigured on host - redirect directly to native mail app
+          setEmailStatus({
+            type: 'success',
+            message: 'Opening your email client (Gmail / Outlook / Mail)...',
+          });
+          const targetMailto = data.mailtoUrl || fallbackMailto;
+          window.location.href = targetMailto;
           setTimeout(() => {
             closeInviteModal();
           }, 3000);
@@ -961,8 +992,15 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ username, initialRoomId,
           setEmailStatus({ type: 'error', message: data.error || 'Failed to send invitation email.' });
         }
       } catch (err: any) {
-        console.error('Error sending invite email:', err);
-        setEmailStatus({ type: 'error', message: 'Could not connect to the server to send email.' });
+        console.warn('Backend email invite unreachable or timed out. Opening email app directly:', err);
+        setEmailStatus({
+          type: 'success',
+          message: 'Opening your email client (Gmail / Outlook / Mail)...',
+        });
+        window.location.href = fallbackMailto;
+        setTimeout(() => {
+          closeInviteModal();
+        }, 3000);
       } finally {
         setIsSendingEmail(false);
       }
@@ -2531,18 +2569,50 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ username, initialRoomId,
               <button className="btn-close" disabled={isSendingEmail} onClick={closeInviteModal} />
             </div>
             <p className="text-muted small mb-3">
-              Share this whiteboard session with others via email or copy the invite link.
+              Share this whiteboard session with others via email, chat apps, or copy the invite link.
             </p>
+
+            {typeof navigator !== 'undefined' && 'share' in navigator && (
+              <button
+                type="button"
+                className="btn btn-outline-primary w-100 rounded-3 d-flex align-items-center justify-content-center gap-2 mb-3 py-2"
+                onClick={handleNativeShare}
+              >
+                <Share2 size={16} />
+                <span className="fw-semibold small">Share via Apps (WhatsApp, Discord, etc.)</span>
+              </button>
+            )}
+
             <div className="mb-3">
-              <label className="form-label small fw-semibold">Email (optional)</label>
-              <input
-                type="email"
-                className="form-control rounded-3"
-                placeholder="user@example.com"
-                value={inviteEmail}
-                disabled={isSendingEmail}
-                onChange={(e) => setInviteEmail(e.target.value)}
-              />
+              <label className="form-label small fw-semibold">Invite via Email</label>
+              <div className="input-group">
+                <input
+                  type="email"
+                  className="form-control rounded-start-3"
+                  placeholder="friend@gmail.com"
+                  value={inviteEmail}
+                  disabled={isSendingEmail}
+                  onChange={(e) => setInviteEmail(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleInvite();
+                    }
+                  }}
+                />
+                {inviteEmail.trim() && (
+                  <a
+                    href={`mailto:${encodeURIComponent(inviteEmail.trim())}?subject=${encodeURIComponent(`Join my whiteboard session (Room: ${roomId})`)}&body=${encodeURIComponent(`Hello,\n\nYou have been invited to join a live whiteboard session.\n\nRoom ID: ${roomId}\nJoin Link: ${window.location.origin}?room=${roomId}\n\nLooking forward to collaborating!`)}`}
+                    className="btn btn-outline-secondary d-flex align-items-center"
+                    title="Open in your email app directly"
+                  >
+                    <ExternalLink size={16} />
+                  </a>
+                )}
+              </div>
+              <div className="form-text text-muted small mt-1">
+                Sends automated email or opens pre-filled in your mail client.
+              </div>
             </div>
             <div className="mb-3">
               <label className="form-label small fw-semibold">Invite Link</label>

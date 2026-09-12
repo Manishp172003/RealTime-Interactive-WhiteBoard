@@ -318,44 +318,57 @@ io.on('connection', (socket) => {
   });
 });
 
-// Configure Nodemailer transporter
-let transporter;
+// Configure Nodemailer transporter (with timeout guards to prevent hanging on cloud hosts)
+let transporter = null;
 
 async function initTransporter() {
-  if (process.env.SMTP_HOST) {
-    console.log('Using configured SMTP settings for mail.');
+  if (process.env.SMTP_HOST && process.env.SMTP_USER) {
+    console.log('Using configured SMTP settings for mail delivery.');
     transporter = nodemailer.createTransport({
       host: process.env.SMTP_HOST,
-      port: parseInt(process.env.SMTP_PORT || '587', 10),
-      secure: process.env.SMTP_PORT === '465', // true for 465, false for other ports
+      port: parseInt(process.env.SMTP_PORT || '465', 10),
+      secure: process.env.SMTP_PORT === '465' || !process.env.SMTP_PORT, // default to 465 SSL
       auth: {
         user: process.env.SMTP_USER,
         pass: process.env.SMTP_PASS,
       },
+      connectionTimeout: 5000,
+      greetingTimeout: 5000,
+      socketTimeout: 8000,
     });
   } else {
-    console.log('No SMTP configuration found. Generating test Ethereal account...');
-    try {
-      const testAccount = await nodemailer.createTestAccount();
-      console.log(`Generated Ethereal Test Account: User: ${testAccount.user}, Pass: ${testAccount.pass}`);
-      transporter = nodemailer.createTransport({
-        host: 'smtp.ethereal.email',
-        port: 587,
-        secure: false,
-        auth: {
-          user: testAccount.user,
-          pass: testAccount.pass,
-        },
-      });
-    } catch (err) {
-      console.error('Failed to create Ethereal test account:', err);
-    }
+    console.log('No production SMTP settings found (SMTP_HOST/SMTP_USER). Using direct mailto client fallback.');
   }
 }
 
 initTransporter();
 
-// API endpoint to send emails
+// Helper to generate professional HTML invite template
+function getInviteHtml(roomId, inviteLink) {
+  return `
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 560px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #ffffff; color: #1e293b;">
+      <div style="text-align: center; margin-bottom: 24px;">
+        <h2 style="color: #4f46e5; margin-bottom: 6px; font-size: 22px;">You're Invited to CollabBoard!</h2>
+        <p style="color: #64748b; font-size: 14px; margin: 0;">Real-time interactive collaborative whiteboard session</p>
+      </div>
+      <p style="font-size: 15px; line-height: 1.5;">Hello,</p>
+      <p style="font-size: 15px; line-height: 1.5;">A collaborator has invited you to join a live whiteboard session in room <strong>${roomId}</strong>.</p>
+      <div style="text-align: center; margin: 28px 0;">
+        <a href="${inviteLink}" style="background-color: #4f46e5; color: #ffffff; padding: 12px 28px; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 15px; display: inline-block;">
+          Join Whiteboard Session &rarr;
+        </a>
+      </div>
+      <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 16px; margin: 20px 0; font-size: 13px; color: #475569;">
+        <strong>Room Name:</strong> <code>${roomId}</code><br/>
+        <strong>Direct Link:</strong> <a href="${inviteLink}" style="color: #4f46e5; word-break: break-all;">${inviteLink}</a>
+      </div>
+      <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 24px 0;">
+      <p style="font-size: 12px; color: #94a3b8; text-align: center; margin: 0;">Sent via CollabBoard Real-Time Interactive Whiteboard.</p>
+    </div>
+  `;
+}
+
+// API endpoint to send emails (with Resend HTTPS, SMTP, and mailto fallback)
 app.post('/api/send-invite', async (req, res) => {
   const { email, roomId, inviteLink } = req.body;
 
@@ -363,61 +376,80 @@ app.post('/api/send-invite', async (req, res) => {
     return res.status(400).json({ error: 'Missing required parameters: email, roomId, inviteLink' });
   }
 
-  // Basic email regex validation
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   if (!emailRegex.test(email)) {
     return res.status(400).json({ error: 'Invalid email address format' });
   }
 
-  if (!transporter) {
-    return res.status(500).json({ error: 'Mail transporter not initialized' });
+  const subject = `Join my whiteboard session (Room: ${roomId})`;
+  const textBody = `Hello,\n\nYou have been invited to join a live whiteboard session.\n\nRoom ID: ${roomId}\nJoin Link: ${inviteLink}\n\nLooking forward to collaborating!`;
+  const mailtoUrl = `mailto:${encodeURIComponent(email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(textBody)}`;
+
+  // 1. Try Resend API over HTTPS (Port 443 - never blocked by Render / cloud providers)
+  if (process.env.RESEND_API_KEY) {
+    try {
+      const resendResponse = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          from: process.env.SMTP_FROM || 'CollabBoard <onboarding@resend.dev>',
+          to: [email],
+          subject,
+          text: textBody,
+          html: getInviteHtml(roomId, inviteLink),
+        }),
+      });
+
+      const resendData = await resendResponse.json();
+      if (resendResponse.ok) {
+        return res.status(200).json({ success: true, message: 'Invitation email delivered successfully via Resend!' });
+      } else {
+        console.warn('Resend error:', resendData);
+      }
+    } catch (e) {
+      console.warn('Resend request failed:', e.message);
+    }
   }
 
-  const mailOptions = {
-    from: process.env.SMTP_FROM || '"Interactive Whiteboard" <no-reply@example.com>',
-    to: email,
-    subject: 'Join my whiteboard session',
-    text: `You have been invited to join an interactive whiteboard session.\n\nClick this link to join: ${inviteLink}\n\nRoom ID: ${roomId}\n\nEnjoy collaborating!`,
-    html: `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">
-        <h2 style="color: #0d6efd; text-align: center;">Interactive Whiteboard Invite</h2>
-        <p>Hello,</p>
-        <p>You have been invited to join a collaborative live whiteboard session.</p>
-        <div style="text-align: center; margin: 30px 0;">
-          <a href="${inviteLink}" style="background-color: #0d6efd; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">Join Whiteboard Session</a>
-        </div>
-        <p style="font-size: 0.9em; color: #666;">
-          <strong>Room ID:</strong> <code>${roomId}</code><br>
-          If the button above does not work, copy and paste this URL into your browser:<br>
-          <a href="${inviteLink}">${inviteLink}</a>
-        </p>
-        <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
-        <p style="font-size: 0.8em; color: #999; text-align: center;">This is an automated invite. Please do not reply to this email.</p>
-      </div>
-    `,
-  };
+  // 2. Try configured SMTP transporter (with strict 6s timeout guard)
+  if (transporter) {
+    try {
+      const sendPromise = transporter.sendMail({
+        from: process.env.SMTP_FROM || `"CollabBoard" <${process.env.SMTP_USER}>`,
+        to: email,
+        subject,
+        text: textBody,
+        html: getInviteHtml(roomId, inviteLink),
+      });
 
-  try {
-    const info = await transporter.sendMail(mailOptions);
-    console.log(`Email sent: ${info.messageId}`);
-    
-    // If using Ethereal email, log the URL to preview the mail
-    const previewUrl = nodemailer.getTestMessageUrl(info);
-    if (previewUrl) {
-      console.log(`Preview URL: ${previewUrl}`);
-      return res.status(200).json({ 
-        success: true, 
-        messageId: info.messageId, 
-        previewUrl: previewUrl,
-        message: 'Email sent successfully via test account. Preview link available in console.' 
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('SMTP connection timed out')), 6000)
+      );
+
+      const info = await Promise.race([sendPromise, timeoutPromise]);
+      console.log(`Email sent via SMTP: ${info.messageId}`);
+      return res.status(200).json({ success: true, message: 'Invitation email sent successfully!' });
+    } catch (error) {
+      console.warn('SMTP delivery failed or timed out:', error.message);
+      return res.status(200).json({
+        success: false,
+        useMailto: true,
+        mailtoUrl,
+        error: 'Cloud SMTP port restricted on server. You can send directly using your email app below!',
       });
     }
-
-    return res.status(200).json({ success: true, message: 'Email sent successfully' });
-  } catch (error) {
-    console.error('Error sending email:', error);
-    return res.status(500).json({ error: 'Failed to send email. ' + error.message });
   }
+
+  // 3. Fallback: Return mailtoUrl so client opens native mail app directly
+  return res.status(200).json({
+    success: false,
+    useMailto: true,
+    mailtoUrl,
+    error: 'No mail service credentials configured on server. Open directly in your email app below!',
+  });
 });
 
 const PORT = process.env.PORT || 5000;
