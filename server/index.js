@@ -219,6 +219,7 @@ io.on('connection', (socket) => {
           username: info.username,
           isMuted: info.isMuted,
           isDeafened: info.isDeafened,
+          isVideoEnabled: info.isVideoEnabled || false,
         }))
       : [];
 
@@ -236,19 +237,21 @@ io.on('connection', (socket) => {
       voiceRooms[roomId] = {};
     }
 
-    // Register user in active voice room
+    // Register user in active voice/video room
     voiceRooms[roomId][socket.id] = {
       username,
       isMuted: false,
       isDeafened: false,
+      isVideoEnabled: false,
     };
 
-    // List of all participants in this voice room
+    // List of all participants in this voice/video room
     const allUsers = Object.entries(voiceRooms[roomId]).map(([id, info]) => ({
       socketId: id,
       username: info.username,
       isMuted: info.isMuted,
       isDeafened: info.isDeafened,
+      isVideoEnabled: info.isVideoEnabled || false,
     }));
 
     // Broadcast full updated list to all users in the room
@@ -294,6 +297,19 @@ io.on('connection', (socket) => {
       socketId: socket.id,
       isMuted,
       isDeafened,
+    });
+  });
+
+  // Broadcast Camera Video status updates
+  socket.on('voice-video-state-change', ({ isVideoEnabled }) => {
+    const roomId = socket.data.roomId;
+    if (!roomId || !voiceRooms[roomId] || !voiceRooms[roomId][socket.id]) return;
+
+    voiceRooms[roomId][socket.id].isVideoEnabled = !!isVideoEnabled;
+
+    socket.to(roomId).emit('voice-user-video-changed', {
+      socketId: socket.id,
+      isVideoEnabled: !!isVideoEnabled,
     });
   });
 

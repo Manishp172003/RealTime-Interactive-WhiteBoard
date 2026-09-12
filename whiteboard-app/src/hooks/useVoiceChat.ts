@@ -8,6 +8,7 @@ export interface VoiceParticipant {
   isMuted: boolean;
   isDeafened: boolean;
   isSpeaking?: boolean;
+  isVideoEnabled?: boolean;
 }
 
 const SAMPLE_RATE = 16000;
@@ -29,10 +30,16 @@ export function useVoiceChat(socket: Socket | null, _username: string, roomId: s
   const [isMuted, setIsMuted] = useState<boolean>(false);
   const [isDeafened, setIsDeafened] = useState<boolean>(false);
   const [isSpeaking, setIsSpeaking] = useState<boolean>(false);
+  const [isVideoEnabled, setIsVideoEnabled] = useState<boolean>(false);
+  const [localVideoStream, setLocalVideoStream] = useState<MediaStream | null>(null);
+  const [remoteStreams, setRemoteStreams] = useState<Record<string, MediaStream>>({});
   const [voiceParticipants, setVoiceParticipants] = useState<VoiceParticipant[]>([]);
   const [voiceError, setVoiceError] = useState<string | null>(null);
 
   const localStreamRef = useRef<MediaStream | null>(null);
+  const localVideoTrackRef = useRef<MediaStreamTrack | null>(null);
+  const localVideoStreamRef = useRef<MediaStream | null>(null);
+  const videoSendersRef = useRef<Record<string, RTCRtpSender>>({});
   const audioContextRef = useRef<AudioContext | null>(null);
   const scriptProcessorRef = useRef<ScriptProcessorNode | null>(null);
   const audioWorkletNodeRef = useRef<AudioWorkletNode | null>(null);
@@ -56,6 +63,17 @@ export function useVoiceChat(socket: Socket | null, _username: string, roomId: s
     }
     delete peerAudioQueuesRef.current[peerSocketId];
     delete iceCandidatesQueueRef.current[peerSocketId];
+
+    if (videoSendersRef.current[peerSocketId]) {
+      delete videoSendersRef.current[peerSocketId];
+    }
+
+    setRemoteStreams((prev) => {
+      if (!prev[peerSocketId]) return prev;
+      const next = { ...prev };
+      delete next[peerSocketId];
+      return next;
+    });
 
     if (peersRef.current[peerSocketId]) {
       try {
@@ -89,22 +107,35 @@ export function useVoiceChat(socket: Socket | null, _username: string, roomId: s
     if (audioWorkletNodeRef.current) {
       try {
         audioWorkletNodeRef.current.disconnect();
-      } catch (e) {}
+      } catch {}
       audioWorkletNodeRef.current = null;
     }
 
     if (scriptProcessorRef.current) {
       try {
         scriptProcessorRef.current.disconnect();
-      } catch (e) {}
+      } catch {}
       scriptProcessorRef.current = null;
     }
 
-    // Stop local media tracks
+    // Stop local audio and video media tracks
     if (localStreamRef.current) {
       localStreamRef.current.getTracks().forEach((track) => track.stop());
       localStreamRef.current = null;
     }
+
+    if (localVideoTrackRef.current) {
+      localVideoTrackRef.current.stop();
+      localVideoTrackRef.current = null;
+    }
+    if (localVideoStreamRef.current) {
+      localVideoStreamRef.current.getTracks().forEach((track) => track.stop());
+      localVideoStreamRef.current = null;
+    }
+    setLocalVideoStream(null);
+    setIsVideoEnabled(false);
+    setRemoteStreams({});
+    videoSendersRef.current = {};
 
     // Close AudioContext
     if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
@@ -167,6 +198,15 @@ export function useVoiceChat(socket: Socket | null, _username: string, roomId: s
         });
       }
 
+      if (localVideoTrackRef.current && localVideoStreamRef.current) {
+        try {
+          const sender = pc.addTrack(localVideoTrackRef.current, localVideoStreamRef.current);
+          videoSendersRef.current[peerSocketId] = sender;
+        } catch (e) {
+          console.warn('Error adding initial video track to peer:', e);
+        }
+      }
+
       pc.onicecandidate = (event) => {
         if (event.candidate && socket && socket.connected) {
           socket.emit('voice-ice-candidate', {
@@ -177,24 +217,40 @@ export function useVoiceChat(socket: Socket | null, _username: string, roomId: s
       };
 
       pc.ontrack = (event) => {
-        const remoteStream = event.streams[0];
-        if (!remoteStream) return;
+        const track = event.track;
+        if (track.kind === 'audio') {
+          const remoteStream = event.streams[0] || new MediaStream([track]);
+          let audio = audioElementsRef.current[peerSocketId];
+          if (!audio) {
+            audio = document.createElement('audio');
+            audio.id = `remote-audio-${peerSocketId}`;
+            audio.autoplay = true;
+            audio.volume = 1.0;
+            audio.setAttribute('playsinline', 'true');
+            audio.style.display = 'none';
+            document.body.appendChild(audio);
+            audioElementsRef.current[peerSocketId] = audio;
+          }
 
-        let audio = audioElementsRef.current[peerSocketId];
-        if (!audio) {
-          audio = document.createElement('audio');
-          audio.id = `remote-audio-${peerSocketId}`;
-          audio.autoplay = true;
-          audio.volume = 1.0;
-          audio.setAttribute('playsinline', 'true');
-          audio.style.display = 'none';
-          document.body.appendChild(audio);
-          audioElementsRef.current[peerSocketId] = audio;
+          audio.muted = isDeafenedRef.current;
+          audio.srcObject = remoteStream;
+          audio.play().catch(() => {});
+        } else if (track.kind === 'video') {
+          console.log(`[WebRTC] Received remote video stream from ${peerSocketId}`);
+          const videoStream = event.streams[0] || new MediaStream([track]);
+          setRemoteStreams((prev) => ({
+            ...prev,
+            [peerSocketId]: videoStream,
+          }));
+
+          track.onended = () => {
+            setRemoteStreams((prev) => {
+              const next = { ...prev };
+              delete next[peerSocketId];
+              return next;
+            });
+          };
         }
-
-        audio.muted = isDeafenedRef.current;
-        audio.srcObject = remoteStream;
-        audio.play().catch(() => {});
       };
 
       // In hybrid mode, WebRTC state changes do NOT kick users from the room
@@ -204,7 +260,7 @@ export function useVoiceChat(socket: Socket | null, _username: string, roomId: s
       };
 
       if (isInitiator) {
-        pc.createOffer({ offerToReceiveAudio: true })
+        pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: true })
           .then((offer) => pc.setLocalDescription(offer))
           .then(() => {
             if (socket && socket.connected && pc.localDescription) {
@@ -225,8 +281,9 @@ export function useVoiceChat(socket: Socket | null, _username: string, roomId: s
     [socket]
   );
 
-  // Join the voice channel
-  const joinVoice = useCallback(async () => {
+  // Join the voice/video channel
+  const joinVoice = useCallback(async (withVideo?: boolean | unknown) => {
+    const useVideo = withVideo === true;
     if (isInVoice || isConnecting) return;
 
     if (!socket || !socket.connected) {
@@ -249,6 +306,29 @@ export function useVoiceChat(socket: Socket | null, _username: string, roomId: s
       });
 
       localStreamRef.current = stream;
+
+      // Acquire initial camera stream if joining with video
+      if (useVideo) {
+        try {
+          const vStream = await navigator.mediaDevices.getUserMedia({
+            video: {
+              width: { ideal: 640 },
+              height: { ideal: 480 },
+              frameRate: { ideal: 24, max: 30 },
+            },
+            audio: false,
+          });
+          const vTrack = vStream.getVideoTracks()[0];
+          if (vTrack) {
+            localVideoTrackRef.current = vTrack;
+            localVideoStreamRef.current = vStream;
+            setLocalVideoStream(vStream);
+            setIsVideoEnabled(true);
+          }
+        } catch (vErr) {
+          console.warn('Could not acquire initial camera stream:', vErr);
+        }
+      }
 
       // 2. Initialize Web Audio API AudioContext for HD Speech & Relay
       const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
@@ -364,6 +444,9 @@ export function useVoiceChat(socket: Socket | null, _username: string, roomId: s
 
       // 4. Emit voice-join to Socket server
       socket.emit('voice-join');
+      if (useVideo && localVideoTrackRef.current) {
+        socket.emit('voice-video-state-change', { isVideoEnabled: true });
+      }
 
       setIsInVoice(true);
       setIsConnecting(false);
@@ -415,6 +498,86 @@ export function useVoiceChat(socket: Socket | null, _username: string, roomId: s
       });
     }
   }, [isDeafened, isMuted, socket]);
+
+  // Toggle camera video stream on/off
+  const toggleVideo = useCallback(async () => {
+    if (!isInVoice) return;
+
+    if (!isVideoEnabled) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            width: { ideal: 640 },
+            height: { ideal: 480 },
+            frameRate: { ideal: 24, max: 30 },
+          },
+          audio: false,
+        });
+
+        const videoTrack = stream.getVideoTracks()[0];
+        if (!videoTrack) return;
+
+        localVideoTrackRef.current = videoTrack;
+        localVideoStreamRef.current = stream;
+        setLocalVideoStream(stream);
+        setIsVideoEnabled(true);
+
+        // Add or replace video track on all active peer connections
+        for (const [peerId, pc] of Object.entries(peersRef.current)) {
+          const sender = videoSendersRef.current[peerId];
+          if (sender) {
+            sender.replaceTrack(videoTrack).catch((e) => console.warn('replaceTrack error:', e));
+          } else {
+            try {
+              const newSender = pc.addTrack(videoTrack, stream);
+              videoSendersRef.current[peerId] = newSender;
+
+              const offer = await pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: true });
+              await pc.setLocalDescription(offer);
+              if (socket && socket.connected && pc.localDescription) {
+                socket.emit('voice-signal', {
+                  target: peerId,
+                  signal: {
+                    type: pc.localDescription.type,
+                    sdp: pc.localDescription.sdp,
+                  },
+                });
+              }
+            } catch (err) {
+              console.warn('Error adding video track to peer:', peerId, err);
+            }
+          }
+        }
+
+        if (socket && socket.connected) {
+          socket.emit('voice-video-state-change', { isVideoEnabled: true });
+        }
+      } catch (err: any) {
+        console.warn('Camera access denied or error:', err);
+        setVoiceError('Camera access denied. Please allow camera permissions in your browser.');
+      }
+    } else {
+      // Turn video off
+      if (localVideoTrackRef.current) {
+        localVideoTrackRef.current.stop();
+        localVideoTrackRef.current = null;
+      }
+      if (localVideoStreamRef.current) {
+        localVideoStreamRef.current.getTracks().forEach((t) => t.stop());
+        localVideoStreamRef.current = null;
+      }
+      setLocalVideoStream(null);
+      setIsVideoEnabled(false);
+
+      for (const sender of Object.values(videoSendersRef.current)) {
+        sender.replaceTrack(null).catch(() => {});
+      }
+
+      if (socket && socket.connected) {
+        socket.emit('voice-video-state-change', { isVideoEnabled: false });
+      }
+    }
+  }, [isInVoice, isVideoEnabled, socket]);
 
   // Set up socket signaling & audio relay listeners
   useEffect(() => {
@@ -553,11 +716,27 @@ export function useVoiceChat(socket: Socket | null, _username: string, roomId: s
       cleanupPeer(peerSocketId);
     };
 
+    // 7. Remote user video state changed
+    const handleVoiceUserVideoChanged = ({ socketId, isVideoEnabled }: { socketId: string; isVideoEnabled: boolean }) => {
+      console.log(`[Voice Engine] Remote peer ${socketId} camera toggled: ${isVideoEnabled}`);
+      setVoiceParticipants((prev) =>
+        prev.map((p) => (p.socketId === socketId ? { ...p, isVideoEnabled } : p))
+      );
+      if (!isVideoEnabled) {
+        setRemoteStreams((prev) => {
+          const next = { ...prev };
+          delete next[socketId];
+          return next;
+        });
+      }
+    };
+
     socket.on('voice-all-users', handleVoiceAllUsers);
     socket.on('voice-audio-chunk', handleVoiceAudioChunk);
     socket.on('voice-signal', handleVoiceSignal);
     socket.on('voice-ice-candidate', handleVoiceIceCandidate);
     socket.on('voice-user-state-changed', handleVoiceUserStateChanged);
+    socket.on('voice-user-video-changed', handleVoiceUserVideoChanged);
     socket.on('voice-user-left', handleVoiceUserLeft);
 
     return () => {
@@ -566,6 +745,7 @@ export function useVoiceChat(socket: Socket | null, _username: string, roomId: s
       socket.off('voice-signal', handleVoiceSignal);
       socket.off('voice-ice-candidate', handleVoiceIceCandidate);
       socket.off('voice-user-state-changed', handleVoiceUserStateChanged);
+      socket.off('voice-user-video-changed', handleVoiceUserVideoChanged);
       socket.off('voice-user-left', handleVoiceUserLeft);
     };
   }, [socket, createPeerConnection, cleanupPeer, processQueuedCandidates]);
@@ -586,12 +766,16 @@ export function useVoiceChat(socket: Socket | null, _username: string, roomId: s
     isMuted,
     isDeafened,
     isSpeaking,
+    isVideoEnabled,
+    localVideoStream,
+    remoteStreams,
     voiceParticipants,
     voiceError,
     joinVoice,
     leaveVoice,
     toggleMute,
     toggleDeafen,
+    toggleVideo,
     clearVoiceError: () => setVoiceError(null),
   };
 }

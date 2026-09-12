@@ -56,10 +56,12 @@ import {
   PhoneOff,
   Radio,
   Users,
-  Share2
+  Share2,
+  VideoOff
 } from 'lucide-react';
 import { WHITEBOARD_TEMPLATES, type LineData, type StickyNote } from '../utils/templates';
 import { useVoiceChat } from '../hooks/useVoiceChat';
+import FloatingVideoCall from './FloatingVideoCall';
 
 export interface CanvasText {
   id: string;
@@ -182,19 +184,23 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ username, initialRoomId,
   const [socketInstance, setSocketInstance] = useState<Socket | null>(null);
   const [isVoiceListOpen, setIsVoiceListOpen] = useState<boolean>(false);
 
-  // WebRTC Live Voice Chat Hook
+  // WebRTC Live Voice & Video Chat Hook
   const {
     isInVoice,
     isConnecting: isVoiceConnecting,
     isMuted,
     isDeafened,
     isSpeaking,
+    isVideoEnabled,
+    localVideoStream,
+    remoteStreams,
     voiceParticipants,
     voiceError,
     joinVoice,
     leaveVoice,
     toggleMute,
     toggleDeafen,
+    toggleVideo,
     clearVoiceError,
   } = useVoiceChat(socketInstance, username, roomId);
   
@@ -1216,14 +1222,15 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ username, initialRoomId,
             )}
           </div>
 
-          {/* WebRTC Live Voice Chat Widget */}
+          {/* WebRTC Live Voice & Video Chat Widget */}
           {!isInVoice ? (
-            <div className="position-relative" ref={voiceDropdownRef}>
+            <div className="position-relative d-flex align-items-center gap-1" ref={voiceDropdownRef}>
+              {/* Join Voice Button */}
               <button
                 className={`glass-panel btn p-2 px-3 rounded-4 d-flex align-items-center gap-2 ${
                   isVoiceConnecting ? 'opacity-75' : ''
                 }`}
-                onClick={joinVoice}
+                onClick={() => joinVoice(false)}
                 disabled={isVoiceConnecting}
                 title="Join Live Voice Chat (WebRTC)"
               >
@@ -1242,13 +1249,29 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ username, initialRoomId,
                 )}
               </button>
 
+              {/* Start Video Call Button */}
+              <button
+                className={`glass-panel btn p-2 px-2-5 rounded-4 d-flex align-items-center gap-1-5 ${
+                  isVoiceConnecting ? 'opacity-75' : ''
+                }`}
+                onClick={() => joinVoice(true)}
+                disabled={isVoiceConnecting}
+                title="Start Live Video Call"
+                style={{ backgroundColor: 'rgba(59, 130, 246, 0.08)', borderColor: 'rgba(59, 130, 246, 0.3)' }}
+              >
+                <Video size={16} className="text-primary" />
+                <span className="fw-semibold text-primary small d-none d-lg-inline">
+                  Video Call
+                </span>
+              </button>
+
               {voiceError && (
                 <div
                   className="position-absolute top-100 end-0 mt-2 glass-panel shadow-lg border rounded-3 p-3 text-start z-4"
                   style={{ width: '280px' }}
                 >
                   <div className="d-flex justify-content-between align-items-center mb-1">
-                    <strong className="text-danger small">Voice Error</strong>
+                    <strong className="text-danger small">Call Error</strong>
                     <button type="button" className="btn-close btn-sm" onClick={clearVoiceError} />
                   </div>
                   <p className="small text-muted mb-0" style={{ fontSize: '12px' }}>{voiceError}</p>
@@ -1257,7 +1280,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ username, initialRoomId,
             </div>
           ) : (
             <div className="position-relative" ref={voiceDropdownRef}>
-              {/* Active Voice Pill */}
+              {/* Active Voice/Video Pill */}
               <div className="d-flex align-items-center gap-1 glass-panel px-2 py-1 rounded-4 shadow-sm border border-success border-opacity-50">
                 {/* Voice Status / Dropdown Toggle */}
                 <button
@@ -1266,15 +1289,27 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ username, initialRoomId,
                   }`}
                   style={{ transition: 'all 0.2s ease' }}
                   onClick={() => setIsVoiceListOpen(!isVoiceListOpen)}
-                  title="View Voice Channel Participants"
+                  title="View Call Participants"
                 >
                   <Radio size={14} className={isSpeaking ? 'text-white' : 'text-success'} />
                   <span className="fw-semibold small d-none d-sm-inline" style={{ fontSize: '12px' }}>
-                    Voice ({voiceParticipants.length + 1})
+                    {isVideoEnabled ? 'Video' : 'Voice'} ({voiceParticipants.length + 1})
                   </span>
                 </button>
 
                 <div className="vr opacity-25 my-1" />
+
+                {/* Camera Toggle Button */}
+                <button
+                  className={`btn btn-sm p-1 px-2 rounded-3 d-flex align-items-center justify-content-center border-0 ${
+                    isVideoEnabled ? 'btn-primary text-white' : 'voice-action-btn'
+                  }`}
+                  onClick={toggleVideo}
+                  title={isVideoEnabled ? 'Turn Off Camera' : 'Turn On Camera'}
+                  style={{ minWidth: '32px', height: '28px' }}
+                >
+                  {isVideoEnabled ? <Video size={14} /> : <VideoOff size={14} />}
+                </button>
 
                 {/* Mute Button */}
                 <button
@@ -1306,7 +1341,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ username, initialRoomId,
                 <button
                   className="btn btn-sm p-1 px-2 rounded-3 d-flex align-items-center justify-content-center border-0 voice-action-btn text-danger"
                   onClick={leaveVoice}
-                  title="Leave Voice Channel"
+                  title="Leave Call"
                   style={{ minWidth: '32px', height: '28px' }}
                 >
                   <PhoneOff size={14} />
@@ -2664,6 +2699,23 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ username, initialRoomId,
           </button>
         </div>
       </div>
+
+      {/* Draggable Floating Video Call Component */}
+      <FloatingVideoCall
+        isInVoice={isInVoice}
+        isMuted={isMuted}
+        isDeafened={isDeafened}
+        isVideoEnabled={isVideoEnabled}
+        isSpeaking={isSpeaking}
+        localVideoStream={localVideoStream}
+        remoteStreams={remoteStreams}
+        voiceParticipants={voiceParticipants}
+        currentUsername={username}
+        onToggleMute={toggleMute}
+        onToggleDeafen={toggleDeafen}
+        onToggleVideo={toggleVideo}
+        onLeave={leaveVoice}
+      />
     </div>
   );
 };
