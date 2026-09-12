@@ -958,7 +958,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ username, initialRoomId,
 
       try {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 6000);
+        const timeoutId = setTimeout(() => controller.abort(), 20000);
 
         const response = await fetch(`${SOCKET_SERVER_URL}/api/send-invite`, {
           method: 'POST',

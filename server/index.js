@@ -1,5 +1,9 @@
 // server/index.js
 require('dotenv').config();
+const dns = require('dns');
+if (dns.setDefaultResultOrder) {
+  dns.setDefaultResultOrder('ipv4first');
+}
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
@@ -329,29 +333,19 @@ async function initTransporter() {
 
     console.log(`Configuring SMTP transporter for user: ${cleanUser} (Gmail: ${isGmail})`);
 
-    const transportConfig = isGmail
-      ? {
-          service: 'gmail',
-          auth: {
-            user: cleanUser,
-            pass: cleanPass,
-          },
-          connectionTimeout: 10000,
-          greetingTimeout: 10000,
-          socketTimeout: 15000,
-        }
-      : {
-          host: (process.env.SMTP_HOST || 'smtp.gmail.com').trim(),
-          port: parseInt(process.env.SMTP_PORT || '465', 10),
-          secure: process.env.SMTP_PORT === '465' || !process.env.SMTP_PORT, // default to 465 SSL
-          auth: {
-            user: cleanUser,
-            pass: cleanPass,
-          },
-          connectionTimeout: 10000,
-          greetingTimeout: 10000,
-          socketTimeout: 15000,
-        };
+    const transportConfig = {
+      host: (process.env.SMTP_HOST || 'smtp.gmail.com').trim(),
+      port: parseInt(process.env.SMTP_PORT || '465', 10),
+      secure: process.env.SMTP_PORT === '465' || !process.env.SMTP_PORT, // default to 465 SSL
+      family: 4, // Force IPv4 to prevent ENETUNREACH on Render
+      auth: {
+        user: cleanUser,
+        pass: cleanPass,
+      },
+      connectionTimeout: 15000,
+      greetingTimeout: 15000,
+      socketTimeout: 20000,
+    };
 
     transporter = nodemailer.createTransport(transportConfig);
   } else {
@@ -478,7 +472,7 @@ app.post('/api/send-invite', async (req, res) => {
       });
 
       const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('SMTP connection timed out')), 12000)
+        setTimeout(() => reject(new Error('SMTP connection timed out')), 18000)
       );
 
       const info = await Promise.race([sendPromise, timeoutPromise]);
