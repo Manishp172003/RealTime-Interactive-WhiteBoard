@@ -985,9 +985,12 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ username, initialRoomId,
             closeInviteModal();
           }, 2500);
         } else {
+          const isSmtpBlock = data.error && (data.error.includes('timeout') || data.error.includes('ENETUNREACH') || data.error.includes('restricted'));
           setEmailStatus({
             type: 'warning',
-            message: 'Server mail credentials not configured on Render yet. You can send directly via Gmail Web or Outlook Web below:',
+            message: isSmtpBlock
+              ? 'Render Free Tier blocks outbound SMTP port 465 (Connection timeout). Click "Open in Gmail Web" below to send instantly, or add a free Brevo API key to Render for automatic sending:'
+              : (data.error || 'Server mail delivery failed. You can send directly via Gmail Web or Outlook Web below:'),
             gmailUrl,
             outlookUrl,
           });
@@ -996,7 +999,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ username, initialRoomId,
         console.warn('Backend email invite unreachable or timed out:', err);
         setEmailStatus({
           type: 'warning',
-          message: 'Server mail credentials not configured on Render yet. You can send directly via Gmail Web or Outlook Web below:',
+          message: 'Server mail request timed out. Click below to send directly via Gmail Web or Outlook Web:',
           gmailUrl,
           outlookUrl,
         });
