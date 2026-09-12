@@ -56,8 +56,7 @@ import {
   PhoneOff,
   Radio,
   Users,
-  Share2,
-  ExternalLink
+  Share2
 } from 'lucide-react';
 import { WHITEBOARD_TEMPLATES, type LineData, type StickyNote } from '../utils/templates';
 import { useVoiceChat } from '../hooks/useVoiceChat';
@@ -151,13 +150,6 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ username, initialRoomId,
   // Invitation State
   const [isInviteModalOpen, setIsInviteModalOpen] = useState<boolean>(false);
   const [inviteEmail, setInviteEmail] = useState<string>('');
-  const [isSendingEmail, setIsSendingEmail] = useState<boolean>(false);
-  const [emailStatus, setEmailStatus] = useState<{ 
-    type: 'success' | 'warning' | 'error'; 
-    message: string; 
-    gmailUrl?: string; 
-    outlookUrl?: string; 
-  } | null>(null);
   
   // Sticky Note Editing State
   const [editingStickyId, setEditingStickyId] = useState<string | null>(null);
@@ -918,8 +910,6 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ username, initialRoomId,
   const closeInviteModal = () => {
     setIsInviteModalOpen(false);
     setInviteEmail('');
-    setEmailStatus(null);
-    setIsSendingEmail(false);
   };
 
   const handleNativeShare = async () => {
@@ -937,75 +927,30 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ username, initialRoomId,
     }
   };
 
-  const handleInvite = async () => {
+  const handleOpenGmail = (targetEmail?: string) => {
+    const emailToUse = (targetEmail || inviteEmail).trim();
     const inviteLink = `${window.location.origin}?room=${roomId}`;
-    if (inviteEmail) {
-      // Validate email format
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      const cleanEmail = inviteEmail.trim();
-      if (!emailRegex.test(cleanEmail)) {
-        setEmailStatus({ type: 'error', message: 'Please enter a valid email address.' });
-        return;
-      }
+    const subject = `Join my whiteboard session (Room: ${roomId})`;
+    const textBody = `Hello,\n\nYou have been invited to join a live collaborative whiteboard session.\n\nRoom ID: ${roomId}\nJoin Link: ${inviteLink}\n\nLooking forward to collaborating!`;
+    const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(emailToUse)}&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(textBody)}`;
+    window.open(gmailUrl, '_blank');
+    closeInviteModal();
+  };
 
-      setIsSendingEmail(true);
-      setEmailStatus(null);
+  const handleOpenOutlook = (targetEmail?: string) => {
+    const emailToUse = (targetEmail || inviteEmail).trim();
+    const inviteLink = `${window.location.origin}?room=${roomId}`;
+    const subject = `Join my whiteboard session (Room: ${roomId})`;
+    const textBody = `Hello,\n\nYou have been invited to join a live collaborative whiteboard session.\n\nRoom ID: ${roomId}\nJoin Link: ${inviteLink}\n\nLooking forward to collaborating!`;
+    const outlookUrl = `https://outlook.live.com/mail/0/deeplink/compose?to=${encodeURIComponent(emailToUse)}&subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(textBody)}`;
+    window.open(outlookUrl, '_blank');
+    closeInviteModal();
+  };
 
-      const subject = `Join my whiteboard session (Room: ${roomId})`;
-      const textBody = `Hello,\n\nYou have been invited to join a live whiteboard session.\n\nRoom ID: ${roomId}\nJoin Link: ${inviteLink}\n\nLooking forward to collaborating!`;
-      const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(cleanEmail)}&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(textBody)}`;
-      const outlookUrl = `https://outlook.live.com/mail/0/deeplink/compose?to=${encodeURIComponent(cleanEmail)}&subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(textBody)}`;
-
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 20000);
-
-        const response = await fetch(`${SOCKET_SERVER_URL}/api/send-invite`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            email: cleanEmail,
-            roomId,
-            inviteLink,
-          }),
-          signal: controller.signal,
-        });
-        clearTimeout(timeoutId);
-
-        const data = await response.json();
-        if (response.ok && data.success) {
-          setEmailStatus({ 
-            type: 'success', 
-            message: `Invitation email sent successfully to ${cleanEmail}!` 
-          });
-
-          setTimeout(() => {
-            closeInviteModal();
-          }, 2500);
-        } else {
-          const isSmtpBlock = data.error && (data.error.includes('timeout') || data.error.includes('ENETUNREACH') || data.error.includes('restricted'));
-          setEmailStatus({
-            type: 'warning',
-            message: isSmtpBlock
-              ? 'Render Free Tier blocks outbound SMTP port 465 (Connection timeout). Click "Open in Gmail Web" below to send instantly, or add a free Brevo API key to Render for automatic sending:'
-              : (data.error || 'Server mail delivery failed. You can send directly via Gmail Web or Outlook Web below:'),
-            gmailUrl,
-            outlookUrl,
-          });
-        }
-      } catch (err: any) {
-        console.warn('Backend email invite unreachable or timed out:', err);
-        setEmailStatus({
-          type: 'warning',
-          message: 'Server mail request timed out. Click below to send directly via Gmail Web or Outlook Web:',
-          gmailUrl,
-          outlookUrl,
-        });
-      } finally {
-        setIsSendingEmail(false);
-      }
+  const handleInvite = () => {
+    const inviteLink = `${window.location.origin}?room=${roomId}`;
+    if (inviteEmail.trim()) {
+      handleOpenGmail(inviteEmail.trim());
     } else {
       navigator.clipboard.writeText(inviteLink);
       setCopied(true);
@@ -2565,13 +2510,17 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ username, initialRoomId,
       {/* Invite Modal */}
       {isInviteModalOpen && (
         <div className="position-fixed top-0 start-0 w-100 h-100 bg-dark bg-opacity-50 d-flex justify-content-center align-items-center z-4" style={{ backdropFilter: 'blur(4px)' }}>
-          <div className="glass-panel p-4 rounded-4 shadow-lg" style={{ width: '400px', maxWidth: '90%' }}>
+          <div className="glass-panel p-4 rounded-4 shadow-lg" style={{ width: '420px', maxWidth: '92%' }}>
             <div className="d-flex justify-content-between align-items-center mb-3">
-              <h5 className="mb-0 fw-bold">Invite Users</h5>
-              <button className="btn-close" disabled={isSendingEmail} onClick={closeInviteModal} />
+              <h5 className="mb-0 fw-bold d-flex align-items-center gap-2">
+                <Mail size={20} className="text-primary" />
+                <span>Invite Collaborators</span>
+              </h5>
+              <button className="btn-close" onClick={closeInviteModal} />
             </div>
+            
             <p className="text-muted small mb-3">
-              Share this whiteboard session with others via email, chat apps, or copy the invite link.
+              Invite friends to this whiteboard session via Gmail, chat apps, or by sharing the room link.
             </p>
 
             {typeof navigator !== 'undefined' && 'share' in navigator && (
@@ -2587,62 +2536,50 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ username, initialRoomId,
 
             <div className="mb-3">
               <label className="form-label small fw-semibold">Invite via Email</label>
-              <div className="input-group">
+              <div className="input-group mb-2">
                 <input
                   type="email"
                   className="form-control rounded-start-3"
                   placeholder="friend@gmail.com"
                   value={inviteEmail}
-                  disabled={isSendingEmail}
                   onChange={(e) => setInviteEmail(e.target.value)}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') {
                       e.preventDefault();
-                      handleInvite();
+                      handleOpenGmail();
                     }
                   }}
                 />
-                {inviteEmail.trim() && (
-                  <a
-                    href={`mailto:${encodeURIComponent(inviteEmail.trim())}?subject=${encodeURIComponent(`Join my whiteboard session (Room: ${roomId})`)}&body=${encodeURIComponent(`Hello,\n\nYou have been invited to join a live whiteboard session.\n\nRoom ID: ${roomId}\nJoin Link: ${window.location.origin}?room=${roomId}\n\nLooking forward to collaborating!`)}`}
-                    className="btn btn-outline-secondary d-flex align-items-center"
-                    title="Open in your email app directly"
-                  >
-                    <ExternalLink size={16} />
-                  </a>
-                )}
+                <button
+                  type="button"
+                  className="btn btn-danger text-white rounded-end-3 d-flex align-items-center gap-1 px-3"
+                  onClick={() => handleOpenGmail()}
+                  title="Open in Gmail"
+                >
+                  <Mail size={15} />
+                  <span className="small fw-semibold">Gmail</span>
+                </button>
               </div>
-              <div className="form-text text-muted small mt-1">
-                Sends automated email or opens pre-filled in your mail client.
+              <div className="d-flex gap-2">
+                <button
+                  type="button"
+                  className="btn btn-sm btn-outline-danger flex-grow-1 rounded-2 d-flex align-items-center justify-content-center gap-1 py-1.5"
+                  onClick={() => handleOpenGmail()}
+                >
+                  <Mail size={14} /> Send via Gmail
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-sm btn-outline-primary flex-grow-1 rounded-2 d-flex align-items-center justify-content-center gap-1 py-1.5"
+                  onClick={() => handleOpenOutlook()}
+                >
+                  <Mail size={14} /> Send via Outlook
+                </button>
               </div>
             </div>
 
-            {inviteEmail.trim() && (
-              <div className="mb-3 p-2 rounded-3 border bg-light bg-opacity-50">
-                <div className="text-muted small fw-semibold mb-2">⚡ Instant 1-Click Send via Web:</div>
-                <div className="d-flex gap-2">
-                  <a
-                    href={`https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(inviteEmail.trim())}&su=${encodeURIComponent(`Join my whiteboard session (Room: ${roomId})`)}&body=${encodeURIComponent(`Hello,\n\nYou have been invited to join a live whiteboard session.\n\nRoom ID: ${roomId}\nJoin Link: ${window.location.origin}?room=${roomId}\n\nLooking forward to collaborating!`)}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="btn btn-sm btn-danger text-white flex-grow-1 rounded-2 d-flex align-items-center justify-content-center gap-1 text-decoration-none py-1.5"
-                  >
-                    <Mail size={14} /> Send via Gmail
-                  </a>
-                  <a
-                    href={`https://outlook.live.com/mail/0/deeplink/compose?to=${encodeURIComponent(inviteEmail.trim())}&subject=${encodeURIComponent(`Join my whiteboard session (Room: ${roomId})`)}&body=${encodeURIComponent(`Hello,\n\nYou have been invited to join a live whiteboard session.\n\nRoom ID: ${roomId}\nJoin Link: ${window.location.origin}?room=${roomId}\n\nLooking forward to collaborating!`)}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="btn btn-sm btn-primary text-white flex-grow-1 rounded-2 d-flex align-items-center justify-content-center gap-1 text-decoration-none py-1.5"
-                  >
-                    <Mail size={14} /> Send via Outlook
-                  </a>
-                </div>
-              </div>
-            )}
-
             <div className="mb-3">
-              <label className="form-label small fw-semibold">Invite Link</label>
+              <label className="form-label small fw-semibold">Or Share Invite Link</label>
               <div className="input-group">
                 <input
                   type="text"
@@ -2650,7 +2587,7 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ username, initialRoomId,
                   value={`${window.location.origin}?room=${roomId}`}
                   readOnly
                 />
-                <button className="btn btn-primary rounded-3 d-flex align-items-center justify-content-center" disabled={isSendingEmail} onClick={() => {
+                <button className="btn btn-primary rounded-3 d-flex align-items-center justify-content-center" onClick={() => {
                   navigator.clipboard.writeText(`${window.location.origin}?room=${roomId}`);
                   setCopied(true);
                   setTimeout(() => setCopied(false), 2000);
@@ -2660,54 +2597,24 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ username, initialRoomId,
               </div>
             </div>
 
-            {emailStatus && (
-              <div className={`alert py-2 px-3 small rounded-3 mb-3 ${
-                emailStatus.type === 'success' 
-                  ? 'alert-success' 
-                  : emailStatus.type === 'warning' 
-                  ? 'alert-warning' 
-                  : 'alert-danger'
-              }`}>
-                <div className="mb-1">{emailStatus.message}</div>
-                {emailStatus.gmailUrl && (
-                  <div className="d-flex flex-wrap gap-2 mt-2">
-                    <a
-                      href={emailStatus.gmailUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="btn btn-sm btn-danger text-white rounded-2 d-flex align-items-center gap-1 text-decoration-none"
-                    >
-                      <Mail size={13} /> Open in Gmail Web
-                    </a>
-                    {emailStatus.outlookUrl && (
-                      <a
-                        href={emailStatus.outlookUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="btn btn-sm btn-primary text-white rounded-2 d-flex align-items-center gap-1 text-decoration-none"
-                      >
-                        <Mail size={13} /> Open in Outlook Web
-                      </a>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-
-            <div className="d-flex gap-2 justify-content-end">
-              <button className="btn btn-secondary rounded-3" disabled={isSendingEmail} onClick={closeInviteModal}>
-                Cancel
+            <div className="d-flex gap-2 justify-content-end pt-2">
+              <button className="btn btn-secondary rounded-3 px-3" onClick={closeInviteModal}>
+                Close
               </button>
-              <button className="btn btn-primary rounded-3" disabled={isSendingEmail} onClick={handleInvite}>
-                {isSendingEmail ? (
+              <button 
+                className="btn btn-primary rounded-3 px-3 d-flex align-items-center gap-1"
+                onClick={handleInvite}
+              >
+                {inviteEmail.trim() ? (
                   <>
-                    <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
-                    Sending...
+                    <Mail size={15} />
+                    <span>Open in Gmail</span>
                   </>
-                ) : inviteEmail ? (
-                  'Send via Server'
                 ) : (
-                  'Copy Link'
+                  <>
+                    {copied ? <Check size={15} /> : <Copy size={15} />}
+                    <span>{copied ? 'Copied!' : 'Copy Link'}</span>
+                  </>
                 )}
               </button>
             </div>
