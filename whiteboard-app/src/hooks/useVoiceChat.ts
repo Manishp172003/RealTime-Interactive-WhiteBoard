@@ -205,6 +205,15 @@ export function useVoiceChat(socket: Socket | null, _username: string, roomId: s
         } catch (e) {
           console.warn('Error adding initial video track to peer:', e);
         }
+      } else {
+        try {
+          const vt = pc.addTransceiver('video', { direction: 'recvonly' });
+          if (vt.sender) {
+            videoSendersRef.current[peerSocketId] = vt.sender;
+          }
+        } catch (e) {
+          console.warn('Error adding video transceiver to peer:', e);
+        }
       }
 
       pc.onicecandidate = (event) => {
@@ -250,6 +259,14 @@ export function useVoiceChat(socket: Socket | null, _username: string, roomId: s
               return next;
             });
           };
+
+          track.onunmute = () => {
+            console.log(`[WebRTC] Remote video track unmuted from ${peerSocketId}`);
+            setRemoteStreams((prev) => ({
+              ...prev,
+              [peerSocketId]: event.streams[0] || new MediaStream([track]),
+            }));
+          };
         }
       };
 
@@ -257,6 +274,28 @@ export function useVoiceChat(socket: Socket | null, _username: string, roomId: s
       // WebSocket audio relay keeps the voice stream alive regardless of NAT!
       pc.onconnectionstatechange = () => {
         console.log(`[WebRTC] Peer ${peerSocketId} state: ${pc.connectionState}`);
+        if (pc.connectionState === 'failed') {
+          console.warn(`[WebRTC] Peer ${peerSocketId} connection failed. Attempting ICE restart...`);
+          try {
+            pc.restartIce();
+            pc.createOffer({ iceRestart: true })
+              .then((offer) => pc.setLocalDescription(offer))
+              .then(() => {
+                if (socket && socket.connected && pc.localDescription) {
+                  socket.emit('voice-signal', {
+                    target: peerSocketId,
+                    signal: {
+                      type: pc.localDescription.type,
+                      sdp: pc.localDescription.sdp,
+                    },
+                  });
+                }
+              })
+              .catch((err) => console.warn('ICE restart offer failed:', err));
+          } catch (e) {
+            console.warn('restartIce error:', e);
+          }
+        }
       };
 
       if (isInitiator) {
@@ -524,14 +563,33 @@ export function useVoiceChat(socket: Socket | null, _username: string, roomId: s
 
         // Add or replace video track on all active peer connections
         for (const [peerId, pc] of Object.entries(peersRef.current)) {
-          const sender = videoSendersRef.current[peerId];
+          let sender = videoSendersRef.current[peerId];
+          const transceivers = pc.getTransceivers ? pc.getTransceivers() : [];
+          const videoTransceiver = transceivers.find((t) => t.receiver.track?.kind === 'video' || t.sender.track?.kind === 'video');
+
+          if (videoTransceiver) {
+            videoTransceiver.direction = 'sendrecv';
+            sender = videoTransceiver.sender;
+            videoSendersRef.current[peerId] = sender;
+          }
+
           if (sender) {
-            sender.replaceTrack(videoTrack).catch((e) => console.warn('replaceTrack error:', e));
+            try {
+              await sender.replaceTrack(videoTrack);
+            } catch (e) {
+              console.warn('replaceTrack error:', e);
+            }
           } else {
             try {
               const newSender = pc.addTrack(videoTrack, stream);
               videoSendersRef.current[peerId] = newSender;
+            } catch (err) {
+              console.warn('Error adding video track to peer:', peerId, err);
+            }
+          }
 
+          if (pc.signalingState === 'stable') {
+            try {
               const offer = await pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: true });
               await pc.setLocalDescription(offer);
               if (socket && socket.connected && pc.localDescription) {
@@ -544,7 +602,7 @@ export function useVoiceChat(socket: Socket | null, _username: string, roomId: s
                 });
               }
             } catch (err) {
-              console.warn('Error adding video track to peer:', peerId, err);
+              console.warn('Error renegotiating video track with peer:', peerId, err);
             }
           }
         }
@@ -569,8 +627,18 @@ export function useVoiceChat(socket: Socket | null, _username: string, roomId: s
       setLocalVideoStream(null);
       setIsVideoEnabled(false);
 
-      for (const sender of Object.values(videoSendersRef.current)) {
-        sender.replaceTrack(null).catch(() => {});
+      for (const [peerId, pc] of Object.entries(peersRef.current)) {
+        const sender = videoSendersRef.current[peerId];
+        if (sender) {
+          sender.replaceTrack(null).catch(() => {});
+        }
+        if (pc.getTransceivers) {
+          const transceivers = pc.getTransceivers();
+          const vt = transceivers.find((t) => t.receiver.track?.kind === 'video' || t.sender.track?.kind === 'video');
+          if (vt) {
+            vt.direction = 'recvonly';
+          }
+        }
       }
 
       if (socket && socket.connected) {
@@ -591,8 +659,11 @@ export function useVoiceChat(socket: Socket | null, _username: string, roomId: s
       setVoiceParticipants(remotePeers);
 
       // Attempt WebRTC mesh connection with peers
+      const myId = socket.id || '';
       remotePeers.forEach((peer) => {
-        createPeerConnection(peer.socketId, true);
+        // Deterministic tiebreaker: exactly one peer initiates to prevent glare
+        const isInitiator = myId > peer.socketId;
+        createPeerConnection(peer.socketId, isInitiator);
       });
     };
 
@@ -657,6 +728,18 @@ export function useVoiceChat(socket: Socket | null, _username: string, roomId: s
           pc = createPeerConnection(caller, false);
         }
         try {
+          const isPolite = (socket.id || '') > caller;
+          const offerCollision = pc.signalingState !== 'stable';
+
+          if (offerCollision) {
+            if (!isPolite) {
+              console.warn('[WebRTC] Impolite peer: ignoring colliding offer from:', caller);
+              return;
+            }
+            console.log('[WebRTC] Polite peer: rolling back local offer to accept remote offer');
+            await pc.setRemoteDescription({ type: 'rollback' } as any);
+          }
+
           await pc.setRemoteDescription(new RTCSessionDescription(signal));
           await processQueuedCandidates(caller, pc);
 
@@ -677,6 +760,11 @@ export function useVoiceChat(socket: Socket | null, _username: string, roomId: s
         }
       } else if (signal.type === 'answer') {
         if (pc) {
+          // Prevent InvalidStateError when answer arrives in stable state
+          if (pc.signalingState !== 'have-local-offer') {
+            console.warn(`[WebRTC] Ignoring answer received in state: ${pc.signalingState}`);
+            return;
+          }
           try {
             await pc.setRemoteDescription(new RTCSessionDescription(signal));
             await processQueuedCandidates(caller, pc);
@@ -689,6 +777,7 @@ export function useVoiceChat(socket: Socket | null, _username: string, roomId: s
 
     // 4. ICE candidate received
     const handleVoiceIceCandidate = async ({ caller, candidate }: { caller: string; candidate: RTCIceCandidateInit }) => {
+      if (!candidate || (!candidate.candidate && candidate.candidate !== '')) return;
       const pc = peersRef.current[caller];
       if (pc && pc.remoteDescription && pc.remoteDescription.type) {
         try {

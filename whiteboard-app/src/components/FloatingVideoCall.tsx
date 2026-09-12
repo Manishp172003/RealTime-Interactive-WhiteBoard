@@ -31,7 +31,7 @@ export interface FloatingVideoCallProps {
   onLeave: () => void;
 }
 
-// Generate consistent avatar color based on name
+// Generate consistent avatar gradient based on username
 function getAvatarColor(name: string): string {
   const colors = [
     'linear-gradient(135deg, #6366f1, #4f46e5)', // indigo
@@ -48,7 +48,7 @@ function getAvatarColor(name: string): string {
   return colors[Math.abs(hash) % colors.length];
 }
 
-// Video Tile sub-component to ensure ref/srcObject assignment
+// Video Tile sub-component: handles video playback without browser autoplay policy blocking
 const VideoTile: React.FC<{
   stream: MediaStream | null;
   isVideoActive: boolean;
@@ -60,15 +60,21 @@ const VideoTile: React.FC<{
   const videoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
-    if (videoRef.current) {
+    const videoEl = videoRef.current;
+    if (videoEl) {
       if (stream && isVideoActive) {
-        videoRef.current.srcObject = stream;
-        videoRef.current.play().catch((err) => {
-          // Autoplay might require user interaction or already playing
-          console.debug('[VideoTile] play() error or aborted:', err);
-        });
+        // Always mute the video element so browser autoplay policies never block playback.
+        // Remote speech audio is played via dedicated audio elements/engine.
+        videoEl.muted = true;
+        videoEl.srcObject = stream;
+        const playPromise = videoEl.play();
+        if (playPromise !== undefined) {
+          playPromise.catch((err) => {
+            console.debug('[VideoTile] play error/aborted:', err);
+          });
+        }
       } else {
-        videoRef.current.srcObject = null;
+        videoEl.srcObject = null;
       }
     }
   }, [stream, isVideoActive]);
@@ -83,7 +89,7 @@ const VideoTile: React.FC<{
       style={{
         width: '100%',
         height: '100%',
-        minHeight: '110px',
+        minHeight: '80px',
         backgroundColor: '#0f172a',
         boxShadow: isSpeaking ? '0 0 0 2px #22c55e, 0 0 12px rgba(34, 197, 94, 0.4)' : 'inset 0 0 0 1px rgba(255,255,255,0.08)',
         transition: 'box-shadow 0.2s ease',
@@ -94,7 +100,7 @@ const VideoTile: React.FC<{
         ref={videoRef}
         autoPlay
         playsInline
-        muted={isSelf}
+        muted
         style={{
           width: '100%',
           height: '100%',
@@ -110,9 +116,9 @@ const VideoTile: React.FC<{
           <div
             className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold shadow-sm mb-1"
             style={{
-              width: '46px',
-              height: '46px',
-              fontSize: '16px',
+              width: '44px',
+              height: '44px',
+              fontSize: '15px',
               background: getAvatarColor(username),
               border: isSpeaking ? '2px solid #22c55e' : '2px solid rgba(255,255,255,0.2)',
             }}
@@ -135,6 +141,7 @@ const VideoTile: React.FC<{
           fontSize: '11px',
           color: '#f8fafc',
           maxWidth: 'calc(100% - 10px)',
+          pointerEvents: 'none',
         }}
       >
         <span className="text-truncate" style={{ maxWidth: '110px' }}>
@@ -149,7 +156,7 @@ const VideoTile: React.FC<{
       {isSpeaking && (
         <div 
           className="position-absolute top-0 end-0 m-1 px-1-5 py-0-5 rounded-pill d-flex align-items-center gap-1 bg-success text-white"
-          style={{ fontSize: '9px', fontWeight: 600, padding: '2px 6px' }}
+          style={{ fontSize: '9px', fontWeight: 600, padding: '2px 6px', pointerEvents: 'none' }}
         >
           <span className="spinner-grow spinner-grow-sm" style={{ width: '6px', height: '6px' }} />
           <span>Speaking</span>
@@ -176,21 +183,34 @@ export const FloatingVideoCall: React.FC<FloatingVideoCallProps> = ({
 }) => {
   const [isMinimized, setIsMinimized] = useState<boolean>(false);
   const [position, setPosition] = useState<{ x: number; y: number }>(() => {
-    // Default top-right floating placement
-    const width = 340;
-    const defaultX = typeof window !== 'undefined' ? Math.max(20, window.innerWidth - width - 24) : 900;
+    const defaultWidth = 380;
+    const defaultX = typeof window !== 'undefined' ? Math.max(20, window.innerWidth - defaultWidth - 24) : 900;
     return { x: defaultX, y: 76 };
   });
 
+  // Resizable dimensions (width & height)
+  const [size, setSize] = useState<{ width: number; height: number }>(() => ({
+    width: 380,
+    height: 280,
+  }));
+
   const [isDragging, setIsDragging] = useState<boolean>(false);
+  const [isResizing, setIsResizing] = useState<boolean>(false);
+
   const dragStartOffset = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const resizeStartRef = useRef<{ startX: number; startY: number; startWidth: number; startHeight: number }>({
+    startX: 0,
+    startY: 0,
+    startWidth: 380,
+    startHeight: 280,
+  });
+
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Dragging handlers
   const handleMouseDown = (e: React.MouseEvent) => {
-    // Only allow dragging on header / drag handle
     const target = e.target as HTMLElement;
-    if (target.closest('button') || target.closest('input')) return;
+    if (target.closest('button') || target.closest('input') || target.closest('.resize-handle')) return;
 
     e.preventDefault();
     e.stopPropagation();
@@ -203,7 +223,7 @@ export const FloatingVideoCall: React.FC<FloatingVideoCallProps> = ({
 
   const handleTouchStart = (e: React.TouchEvent) => {
     const target = e.target as HTMLElement;
-    if (target.closest('button') || target.closest('input')) return;
+    if (target.closest('button') || target.closest('input') || target.closest('.resize-handle')) return;
 
     const touch = e.touches[0];
     if (!touch) return;
@@ -214,37 +234,81 @@ export const FloatingVideoCall: React.FC<FloatingVideoCallProps> = ({
     };
   };
 
+  // Resizing handlers
+  const handleResizeStart = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsResizing(true);
+    resizeStartRef.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      startWidth: size.width,
+      startHeight: size.height,
+    };
+  };
+
+  const handleResizeTouchStart = (e: React.TouchEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const touch = e.touches[0];
+    if (!touch) return;
+    setIsResizing(true);
+    resizeStartRef.current = {
+      startX: touch.clientX,
+      startY: touch.clientY,
+      startWidth: size.width,
+      startHeight: size.height,
+    };
+  };
+
   const handleMouseMove = useCallback((e: MouseEvent) => {
-    if (!isDragging) return;
-    const containerWidth = containerRef.current?.offsetWidth || 320;
-    const containerHeight = containerRef.current?.offsetHeight || 240;
+    if (isDragging) {
+      const containerWidth = size.width;
+      const containerHeight = size.height;
 
-    const newX = Math.max(10, Math.min(window.innerWidth - containerWidth - 10, e.clientX - dragStartOffset.current.x));
-    const newY = Math.max(10, Math.min(window.innerHeight - containerHeight - 10, e.clientY - dragStartOffset.current.y));
-
-    setPosition({ x: newX, y: newY });
-  }, [isDragging]);
+      const newX = Math.max(10, Math.min(window.innerWidth - containerWidth - 10, e.clientX - dragStartOffset.current.x));
+      const newY = Math.max(10, Math.min(window.innerHeight - containerHeight - 10, e.clientY - dragStartOffset.current.y));
+      setPosition({ x: newX, y: newY });
+    } else if (isResizing) {
+      const deltaX = e.clientX - resizeStartRef.current.startX;
+      const deltaY = e.clientY - resizeStartRef.current.startY;
+      const maxW = Math.min(900, window.innerWidth - position.x - 10);
+      const maxH = Math.min(750, window.innerHeight - position.y - 10);
+      const newWidth = Math.max(260, Math.min(maxW, resizeStartRef.current.startWidth + deltaX));
+      const newHeight = Math.max(180, Math.min(maxH, resizeStartRef.current.startHeight + deltaY));
+      setSize({ width: newWidth, height: newHeight });
+    }
+  }, [isDragging, isResizing, size.width, size.height, position.x, position.y]);
 
   const handleTouchMove = useCallback((e: TouchEvent) => {
-    if (!isDragging) return;
     const touch = e.touches[0];
     if (!touch) return;
 
-    const containerWidth = containerRef.current?.offsetWidth || 320;
-    const containerHeight = containerRef.current?.offsetHeight || 240;
+    if (isDragging) {
+      const containerWidth = size.width;
+      const containerHeight = size.height;
 
-    const newX = Math.max(10, Math.min(window.innerWidth - containerWidth - 10, touch.clientX - dragStartOffset.current.x));
-    const newY = Math.max(10, Math.min(window.innerHeight - containerHeight - 10, touch.clientY - dragStartOffset.current.y));
-
-    setPosition({ x: newX, y: newY });
-  }, [isDragging]);
+      const newX = Math.max(10, Math.min(window.innerWidth - containerWidth - 10, touch.clientX - dragStartOffset.current.x));
+      const newY = Math.max(10, Math.min(window.innerHeight - containerHeight - 10, touch.clientY - dragStartOffset.current.y));
+      setPosition({ x: newX, y: newY });
+    } else if (isResizing) {
+      const deltaX = touch.clientX - resizeStartRef.current.startX;
+      const deltaY = touch.clientY - resizeStartRef.current.startY;
+      const maxW = Math.min(900, window.innerWidth - position.x - 10);
+      const maxH = Math.min(750, window.innerHeight - position.y - 10);
+      const newWidth = Math.max(260, Math.min(maxW, resizeStartRef.current.startWidth + deltaX));
+      const newHeight = Math.max(180, Math.min(maxH, resizeStartRef.current.startHeight + deltaY));
+      setSize({ width: newWidth, height: newHeight });
+    }
+  }, [isDragging, isResizing, size.width, size.height, position.x, position.y]);
 
   const handleMouseUp = useCallback(() => {
     setIsDragging(false);
+    setIsResizing(false);
   }, []);
 
   useEffect(() => {
-    if (isDragging) {
+    if (isDragging || isResizing) {
       window.addEventListener('mousemove', handleMouseMove);
       window.addEventListener('mouseup', handleMouseUp);
       window.addEventListener('touchmove', handleTouchMove);
@@ -261,9 +325,8 @@ export const FloatingVideoCall: React.FC<FloatingVideoCallProps> = ({
       window.removeEventListener('touchmove', handleTouchMove);
       window.removeEventListener('touchend', handleMouseUp);
     };
-  }, [isDragging, handleMouseMove, handleTouchMove, handleMouseUp]);
+  }, [isDragging, isResizing, handleMouseMove, handleTouchMove, handleMouseUp]);
 
-  // If not currently in voice/video room, don't render
   if (!isInVoice) return null;
 
   const totalParticipants = voiceParticipants.length + 1;
@@ -283,9 +346,6 @@ export const FloatingVideoCall: React.FC<FloatingVideoCallProps> = ({
         left: `${position.x}px`,
         top: `${position.y}px`,
         zIndex: 1060, // Above canvas and sticky notes
-        width: isMinimized ? 'auto' : totalParticipants > 2 ? '420px' : '340px',
-        maxWidth: '92vw',
-        transition: isDragging ? 'none' : 'width 0.2s ease, box-shadow 0.2s ease',
         userSelect: 'none',
       }}
       onMouseDown={(e) => e.stopPropagation()} // Prevent canvas drawing on click
@@ -355,20 +415,23 @@ export const FloatingVideoCall: React.FC<FloatingVideoCallProps> = ({
           </button>
         </div>
       ) : (
-        /* Full Floating Card Mode */
+        /* Full Floating Resizable Card Mode */
         <div
-          className="rounded-4 shadow-lg overflow-hidden border"
+          className="rounded-4 shadow-lg overflow-hidden border position-relative d-flex flex-column"
           style={{
+            width: `${size.width}px`,
+            height: `${size.height}px`,
             backgroundColor: 'rgba(15, 23, 42, 0.94)',
             backdropFilter: 'blur(20px)',
             borderColor: 'rgba(255, 255, 255, 0.12)',
             color: '#f8fafc',
             boxShadow: '0 24px 48px -12px rgba(0, 0, 0, 0.65)',
+            transition: isDragging || isResizing ? 'none' : 'width 0.15s ease, height 0.15s ease',
           }}
         >
-          {/* Draggable Header */}
+          {/* Draggable Header with Preset Size Selectors */}
           <div
-            className="d-flex align-items-center justify-content-between px-3 py-2 border-bottom"
+            className="d-flex align-items-center justify-content-between px-3 py-2 border-bottom flex-shrink-0"
             style={{
               borderColor: 'rgba(255, 255, 255, 0.08)',
               cursor: isDragging ? 'grabbing' : 'grab',
@@ -397,8 +460,46 @@ export const FloatingVideoCall: React.FC<FloatingVideoCallProps> = ({
               </div>
             </div>
 
-            {/* Header action buttons */}
-            <div className="d-flex align-items-center gap-1">
+            {/* Header Right Actions: Quick Size Presets & Minimize */}
+            <div className="d-flex align-items-center gap-1-5">
+              {/* Size presets: Small, Medium, Large */}
+              <div 
+                className="d-flex align-items-center bg-black bg-opacity-40 rounded-2 p-0-5 border border-secondary border-opacity-25"
+                style={{ fontSize: '10px' }}
+              >
+                <button
+                  className={`btn btn-xs px-1-5 py-0 rounded-1 border-0 ${
+                    size.width <= 300 ? 'bg-primary text-white fw-bold' : 'text-white-50'
+                  }`}
+                  style={{ fontSize: '10px', height: '18px', lineHeight: '18px' }}
+                  onClick={() => setSize({ width: 280, height: 210 })}
+                  title="Small size (280x210)"
+                >
+                  S
+                </button>
+                <button
+                  className={`btn btn-xs px-1-5 py-0 rounded-1 border-0 ${
+                    size.width > 300 && size.width <= 440 ? 'bg-primary text-white fw-bold' : 'text-white-50'
+                  }`}
+                  style={{ fontSize: '10px', height: '18px', lineHeight: '18px' }}
+                  onClick={() => setSize({ width: 380, height: 280 })}
+                  title="Medium size (380x280)"
+                >
+                  M
+                </button>
+                <button
+                  className={`btn btn-xs px-1-5 py-0 rounded-1 border-0 ${
+                    size.width > 440 ? 'bg-primary text-white fw-bold' : 'text-white-50'
+                  }`}
+                  style={{ fontSize: '10px', height: '18px', lineHeight: '18px' }}
+                  onClick={() => setSize({ width: 540, height: 390 })}
+                  title="Large size (540x390)"
+                >
+                  L
+                </button>
+              </div>
+
+              {/* Minimize Button */}
               <button
                 className="btn btn-sm p-1 rounded-2 border-0 text-white-50 hover-bg"
                 onClick={() => setIsMinimized(true)}
@@ -410,18 +511,18 @@ export const FloatingVideoCall: React.FC<FloatingVideoCallProps> = ({
             </div>
           </div>
 
-          {/* Video / Avatar Grid Area */}
+          {/* Video / Avatar Grid Area (dynamically adapts to window dimensions) */}
           <div 
-            className="p-2-5 d-grid gap-2"
+            className="p-2 d-grid gap-2 flex-grow-1 overflow-hidden"
             style={{
               gridTemplateColumns: getGridTemplate(),
-              maxHeight: '380px',
-              overflowY: 'auto',
-              minHeight: '140px',
+              gridTemplateRows: totalParticipants > 2 ? '1fr 1fr' : '1fr',
+              height: '100%',
+              minHeight: 0,
             }}
           >
             {/* 1. Self Video / Avatar Tile */}
-            <div style={{ height: totalParticipants === 1 ? '210px' : '140px' }}>
+            <div style={{ width: '100%', height: '100%', minHeight: 0 }}>
               <VideoTile
                 stream={localVideoStream}
                 isVideoActive={isVideoEnabled}
@@ -436,7 +537,7 @@ export const FloatingVideoCall: React.FC<FloatingVideoCallProps> = ({
             {voiceParticipants.map((peer) => (
               <div 
                 key={peer.socketId}
-                style={{ height: totalParticipants === 1 ? '210px' : '140px' }}
+                style={{ width: '100%', height: '100%', minHeight: 0 }}
               >
                 <VideoTile
                   stream={remoteStreams[peer.socketId] || null}
@@ -452,35 +553,35 @@ export const FloatingVideoCall: React.FC<FloatingVideoCallProps> = ({
 
           {/* Floating Control Toolbar Footer */}
           <div
-            className="d-flex align-items-center justify-content-center gap-2 p-2 px-3 border-top"
+            className="d-flex align-items-center justify-content-center gap-2 p-1-5 px-3 border-top flex-shrink-0"
             style={{
               borderColor: 'rgba(255, 255, 255, 0.08)',
-              backgroundColor: 'rgba(0, 0, 0, 0.3)',
+              backgroundColor: 'rgba(0, 0, 0, 0.35)',
             }}
           >
             {/* Camera On / Off Button */}
             <button
-              className={`btn btn-sm d-flex align-items-center justify-content-center gap-1-5 rounded-pill px-3 py-1-5 border-0 shadow-sm ${
+              className={`btn btn-sm d-flex align-items-center justify-content-center gap-1-5 rounded-pill px-3 py-1 border-0 shadow-sm ${
                 isVideoEnabled ? 'btn-primary' : 'btn-dark border border-secondary text-white-50'
               }`}
               onClick={onToggleVideo}
               title={isVideoEnabled ? 'Turn Camera Off' : 'Turn Camera On'}
-              style={{ fontSize: '12px', fontWeight: 500, transition: 'all 0.2s ease' }}
+              style={{ fontSize: '11px', fontWeight: 500, transition: 'all 0.2s ease' }}
             >
-              {isVideoEnabled ? <Video size={14} /> : <VideoOff size={14} />}
+              {isVideoEnabled ? <Video size={13} /> : <VideoOff size={13} />}
               <span>{isVideoEnabled ? 'Cam On' : 'Cam Off'}</span>
             </button>
 
             {/* Mic Mute / Unmute Button */}
             <button
-              className={`btn btn-sm d-flex align-items-center justify-content-center gap-1-5 rounded-pill px-3 py-1-5 border-0 shadow-sm ${
+              className={`btn btn-sm d-flex align-items-center justify-content-center gap-1-5 rounded-pill px-3 py-1 border-0 shadow-sm ${
                 isMuted ? 'btn-danger' : 'btn-success'
               }`}
               onClick={onToggleMute}
               title={isMuted ? 'Unmute Microphone' : 'Mute Microphone'}
-              style={{ fontSize: '12px', fontWeight: 500, transition: 'all 0.2s ease' }}
+              style={{ fontSize: '11px', fontWeight: 500, transition: 'all 0.2s ease' }}
             >
-              {isMuted ? <MicOff size={14} /> : <Mic size={14} />}
+              {isMuted ? <MicOff size={13} /> : <Mic size={13} />}
               <span>{isMuted ? 'Muted' : 'Mute'}</span>
             </button>
 
@@ -491,9 +592,9 @@ export const FloatingVideoCall: React.FC<FloatingVideoCallProps> = ({
               }`}
               onClick={onToggleDeafen}
               title={isDeafened ? 'Undeafen' : 'Deafen (Mute incoming audio)'}
-              style={{ width: '34px', height: '34px' }}
+              style={{ width: '30px', height: '30px' }}
             >
-              {isDeafened ? <VolumeX size={14} /> : <Volume2 size={14} />}
+              {isDeafened ? <VolumeX size={13} /> : <Volume2 size={13} />}
             </button>
 
             {/* Leave Call Button */}
@@ -501,10 +602,36 @@ export const FloatingVideoCall: React.FC<FloatingVideoCallProps> = ({
               className="btn btn-sm btn-outline-danger d-flex align-items-center justify-content-center rounded-circle ms-1"
               onClick={onLeave}
               title="Leave Call"
-              style={{ width: '34px', height: '34px' }}
+              style={{ width: '30px', height: '30px' }}
             >
-              <PhoneOff size={14} />
+              <PhoneOff size={13} />
             </button>
+          </div>
+
+          {/* Interactive Drag-to-Resize Corner Gripper (Bottom-Right) */}
+          <div
+            className="resize-handle position-absolute bottom-0 end-0 d-flex align-items-center justify-content-center"
+            style={{
+              width: '18px',
+              height: '18px',
+              cursor: 'se-resize',
+              zIndex: 30,
+              opacity: isResizing ? 1 : 0.6,
+              transition: 'opacity 0.2s ease',
+              margin: '2px',
+            }}
+            onMouseDown={handleResizeStart}
+            onTouchStart={handleResizeTouchStart}
+            title="Drag corner to freely resize video call window"
+          >
+            <svg viewBox="0 0 10 10" width="10" height="10" fill="rgba(255,255,255,0.7)">
+              <circle cx="8" cy="2" r="1.1" />
+              <circle cx="8" cy="5" r="1.1" />
+              <circle cx="5" cy="5" r="1.1" />
+              <circle cx="8" cy="8" r="1.1" />
+              <circle cx="5" cy="8" r="1.1" />
+              <circle cx="2" cy="8" r="1.1" />
+            </svg>
           </div>
         </div>
       )}
