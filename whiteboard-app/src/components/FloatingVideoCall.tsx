@@ -66,12 +66,24 @@ const VideoTile: React.FC<{
         // Always mute the video element so browser autoplay policies never block playback.
         // Remote speech audio is played via dedicated audio elements/engine.
         videoEl.muted = true;
-        videoEl.srcObject = stream;
-        const playPromise = videoEl.play();
-        if (playPromise !== undefined) {
-          playPromise.catch((err) => {
-            console.debug('[VideoTile] play error/aborted:', err);
-          });
+        if (videoEl.srcObject !== stream) {
+          videoEl.srcObject = stream;
+        }
+        videoEl.play().catch((err) => {
+          console.debug('[VideoTile] play error/aborted:', err);
+        });
+
+        const vTrack = stream.getVideoTracks()[0];
+        if (vTrack) {
+          const handleUnmute = () => {
+            if (videoRef.current && isVideoActive) {
+              videoRef.current.play().catch(() => {});
+            }
+          };
+          vTrack.addEventListener('unmute', handleUnmute);
+          return () => {
+            vTrack.removeEventListener('unmute', handleUnmute);
+          };
         }
       } else {
         videoEl.srcObject = null;

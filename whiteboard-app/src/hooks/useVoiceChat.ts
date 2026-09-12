@@ -207,7 +207,7 @@ export function useVoiceChat(socket: Socket | null, _username: string, roomId: s
         }
       } else {
         try {
-          const vt = pc.addTransceiver('video', { direction: 'recvonly' });
+          const vt = pc.addTransceiver('video', { direction: 'sendrecv' });
           if (vt.sender) {
             videoSendersRef.current[peerSocketId] = vt.sender;
           }
@@ -627,17 +627,10 @@ export function useVoiceChat(socket: Socket | null, _username: string, roomId: s
       setLocalVideoStream(null);
       setIsVideoEnabled(false);
 
-      for (const [peerId, pc] of Object.entries(peersRef.current)) {
+      for (const [peerId] of Object.entries(peersRef.current)) {
         const sender = videoSendersRef.current[peerId];
         if (sender) {
           sender.replaceTrack(null).catch(() => {});
-        }
-        if (pc.getTransceivers) {
-          const transceivers = pc.getTransceivers();
-          const vt = transceivers.find((t) => t.receiver.track?.kind === 'video' || t.sender.track?.kind === 'video');
-          if (vt) {
-            vt.direction = 'recvonly';
-          }
         }
       }
 
@@ -755,6 +748,14 @@ export function useVoiceChat(socket: Socket | null, _username: string, roomId: s
               },
             });
           }
+
+          const videoReceiver = pc.getReceivers().find((r) => r.track && r.track.kind === 'video');
+          if (videoReceiver && videoReceiver.track) {
+            setRemoteStreams((prev) => ({
+              ...prev,
+              [caller]: new MediaStream([videoReceiver.track]),
+            }));
+          }
         } catch (err) {
           console.warn('Error handling WebRTC offer:', err);
         }
@@ -768,6 +769,14 @@ export function useVoiceChat(socket: Socket | null, _username: string, roomId: s
           try {
             await pc.setRemoteDescription(new RTCSessionDescription(signal));
             await processQueuedCandidates(caller, pc);
+
+            const videoReceiver = pc.getReceivers().find((r) => r.track && r.track.kind === 'video');
+            if (videoReceiver && videoReceiver.track) {
+              setRemoteStreams((prev) => ({
+                ...prev,
+                [caller]: new MediaStream([videoReceiver.track]),
+              }));
+            }
           } catch (err) {
             console.warn('Error handling WebRTC answer:', err);
           }
@@ -811,12 +820,19 @@ export function useVoiceChat(socket: Socket | null, _username: string, roomId: s
       setVoiceParticipants((prev) =>
         prev.map((p) => (p.socketId === socketId ? { ...p, isVideoEnabled } : p))
       );
-      if (!isVideoEnabled) {
-        setRemoteStreams((prev) => {
-          const next = { ...prev };
-          delete next[socketId];
-          return next;
-        });
+
+      if (isVideoEnabled) {
+        const pc = peersRef.current[socketId];
+        if (pc) {
+          const videoReceiver = pc.getReceivers().find((r) => r.track && r.track.kind === 'video');
+          if (videoReceiver && videoReceiver.track) {
+            console.log(`[Voice Engine] Re-syncing remote video track for ${socketId}`);
+            setRemoteStreams((prev) => ({
+              ...prev,
+              [socketId]: new MediaStream([videoReceiver.track]),
+            }));
+          }
+        }
       }
     };
 
