@@ -318,24 +318,42 @@ io.on('connection', (socket) => {
   });
 });
 
-// Configure Nodemailer transporter (with timeout guards to prevent hanging on cloud hosts)
+// Configure Nodemailer transporter (with timeout guards and whitespace stripping)
 let transporter = null;
 
 async function initTransporter() {
-  if (process.env.SMTP_HOST && process.env.SMTP_USER) {
-    console.log('Using configured SMTP settings for mail delivery.');
-    transporter = nodemailer.createTransport({
-      host: process.env.SMTP_HOST,
-      port: parseInt(process.env.SMTP_PORT || '465', 10),
-      secure: process.env.SMTP_PORT === '465' || !process.env.SMTP_PORT, // default to 465 SSL
-      auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS,
-      },
-      connectionTimeout: 5000,
-      greetingTimeout: 5000,
-      socketTimeout: 8000,
-    });
+  if (process.env.SMTP_USER && (process.env.SMTP_HOST || process.env.SMTP_PASS)) {
+    const cleanUser = (process.env.SMTP_USER || '').trim();
+    const cleanPass = (process.env.SMTP_PASS || '').replace(/\s+/g, '');
+    const isGmail = (process.env.SMTP_HOST || '').includes('gmail') || cleanUser.includes('@gmail.com');
+
+    console.log(`Configuring SMTP transporter for user: ${cleanUser} (Gmail: ${isGmail})`);
+
+    const transportConfig = isGmail
+      ? {
+          service: 'gmail',
+          auth: {
+            user: cleanUser,
+            pass: cleanPass,
+          },
+          connectionTimeout: 10000,
+          greetingTimeout: 10000,
+          socketTimeout: 15000,
+        }
+      : {
+          host: (process.env.SMTP_HOST || 'smtp.gmail.com').trim(),
+          port: parseInt(process.env.SMTP_PORT || '465', 10),
+          secure: process.env.SMTP_PORT === '465' || !process.env.SMTP_PORT, // default to 465 SSL
+          auth: {
+            user: cleanUser,
+            pass: cleanPass,
+          },
+          connectionTimeout: 10000,
+          greetingTimeout: 10000,
+          socketTimeout: 15000,
+        };
+
+    transporter = nodemailer.createTransport(transportConfig);
   } else {
     console.log('No production SMTP settings found (SMTP_HOST/SMTP_USER). Using direct mailto client fallback.');
   }
@@ -448,8 +466,11 @@ app.post('/api/send-invite', async (req, res) => {
   // 2. Try configured SMTP transporter (with strict 6s timeout guard)
   if (transporter) {
     try {
+      const sender = process.env.SMTP_FROM || `"CollabBoard" <${(process.env.SMTP_USER || '').trim()}>`;
+      console.log(`Attempting SMTP delivery from ${sender} to ${email}...`);
+
       const sendPromise = transporter.sendMail({
-        from: process.env.SMTP_FROM || `"CollabBoard" <${process.env.SMTP_USER}>`,
+        from: sender,
         to: email,
         subject,
         text: textBody,
@@ -457,19 +478,19 @@ app.post('/api/send-invite', async (req, res) => {
       });
 
       const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('SMTP connection timed out')), 6000)
+        setTimeout(() => reject(new Error('SMTP connection timed out')), 12000)
       );
 
       const info = await Promise.race([sendPromise, timeoutPromise]);
-      console.log(`Email sent via SMTP: ${info.messageId}`);
-      return res.status(200).json({ success: true, message: 'Invitation email sent successfully!' });
+      console.log(`Email sent via SMTP to ${email}: ${info.messageId}`);
+      return res.status(200).json({ success: true, message: `Invitation email sent successfully to ${email}!` });
     } catch (error) {
       console.warn('SMTP delivery failed or timed out:', error.message);
       return res.status(200).json({
         success: false,
         useMailto: true,
         mailtoUrl,
-        error: 'Cloud SMTP port restricted on server. You can send directly using your email app below!',
+        error: `SMTP delivery failed: ${error.message}. You can send directly using your email app below!`,
       });
     }
   }
